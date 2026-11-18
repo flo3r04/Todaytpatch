@@ -1,0 +1,9 @@
+{
+  "name": "todaypatch-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "오늘의 패치 아이온2 정보 큐레이션 UI 프로토타입",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
