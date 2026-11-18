@@ -160,6 +160,29 @@ function renderHome() {
         </label>
         <div class="game-results" id="game-results" aria-live="polite"></div>
       </section>
+      <section class="home-guide" aria-labelledby="home-guide-title">
+        <div class="home-guide-heading">
+          <div><span class="home-guide-eyebrow">QUICK GUIDE</span><h2 id="home-guide-title">이용 방법</h2></div>
+          <p>게임을 찾고 필요한 정보를 간편하게 확인해 보세요.</p>
+        </div>
+        <div class="guide-steps">
+          <article class="guide-step">
+            <div class="guide-step-top"><span class="guide-step-number">01</span><span class="guide-step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg></span></div>
+            <h3>게임 검색하기</h3>
+            <p>검색창에 게임 이름을 입력하고 검색 결과를 선택하세요.</p>
+          </article>
+          <article class="guide-step">
+            <div class="guide-step-top"><span class="guide-step-number">02</span><span class="guide-step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2"/></svg></span></div>
+            <h3>필요한 정보 확인하기</h3>
+            <p>업데이트, 직업, 이벤트, 공략 메뉴에서 원하는 내용을 찾아보세요.</p>
+          </article>
+          <article class="guide-step">
+            <div class="guide-step-top"><span class="guide-step-number">03</span><span class="guide-step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 4.5h10a1 1 0 0 1 1 1v15l-6-3.5L6 20.5v-15a1 1 0 0 1 1-1Z"/><path d="m9 10 2 2 4-4"/></svg></span></div>
+            <h3>저장하고 체크하기</h3>
+            <p>관심 있는 소식은 북마크하고 오늘 할 일은 체크리스트로 관리하세요.</p>
+          </article>
+        </div>
+      </section>
     </main>`;
 }
 
@@ -339,7 +362,12 @@ function drawNewsList() {
 function drawGameResults() {
   const results = app.querySelector("#game-results");
   if (!results) return;
-  const matches = game.aliases.toLocaleLowerCase("ko-KR").includes(state.gameQuery.trim().toLocaleLowerCase("ko-KR"));
+  const query = state.gameQuery.trim().toLocaleLowerCase("ko-KR");
+  if (!query) {
+    results.innerHTML = "";
+    return;
+  }
+  const matches = game.aliases.toLocaleLowerCase("ko-KR").includes(query);
   results.innerHTML = matches ? `
     <a class="game-result" href="#/aion2" aria-label="아이온2 정보 열기">
       <span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span>
