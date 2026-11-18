@@ -342,7 +342,7 @@ function drawGameResults() {
   const matches = game.aliases.toLocaleLowerCase("ko-KR").includes(state.gameQuery.trim().toLocaleLowerCase("ko-KR"));
   results.innerHTML = matches ? `
     <a class="game-result" href="#/aion2" aria-label="아이온2 정보 열기">
-      <span class="game-result-mark" aria-hidden="true">A</span>
+      <span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span>
       <span class="game-result-copy"><strong>아이온2</strong><small>업데이트 · 직업 · 이벤트 · 공략</small></span>
       <span class="game-result-arrow" aria-hidden="true">→</span>
     </a>` : `<div class="no-games"><strong>검색 결과가 없습니다.</strong><span>게임 이름을 다시 확인해 주세요.</span></div>`;

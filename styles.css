@@ -58,7 +58,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .game-results { margin-top: 12px; text-align: left; }
 .game-result { min-height: 76px; display: flex; align-items: center; gap: 14px; padding: 13px 17px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
 .game-result:hover { transform: translateY(-1px); border-color: #cbd5ed; box-shadow: 0 8px 20px rgba(35, 51, 90, .05); }
-.game-result-mark { width: 42px; height: 42px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 9px; background: linear-gradient(145deg, #eff3ff, #e4ebff); color: var(--brand); font-size: 16px; font-weight: 700; }
+.game-result-mark { width: 48px; height: 48px; display: block; flex: 0 0 auto; overflow: hidden; border-radius: 8px; background: #07111d; }
+.game-result-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .game-result-copy { display: grid; gap: 5px; }
 .game-result-copy strong { font-size: 13px; font-weight: 600; }
 .game-result-copy small { color: var(--muted); font-size: 10px; }
