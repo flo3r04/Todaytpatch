@@ -4,13 +4,19 @@
 
 ## 로컬에서 실행하기
 
+### Node.js 없이 바로 열기
+
+파일 탐색기에서 `index.html`을 더블클릭하세요. 정적 화면과 검색·필터 기능을 바로 사용할 수 있습니다. CSS와 JavaScript 경로를 상대 경로로 지정해 `file://`에서도 열리도록 구성했습니다.
+
+### 로컬 서버로 실행하기 (선택)
+
 Node.js 18 이상이 설치되어 있으면 추가 패키지 설치 없이 실행할 수 있습니다.
 
 ```bash
 node server.js
 ```
 
-브라우저에서 [http://localhost:4173](http://localhost:4173)을 여세요. 다른 포트를 사용하려면 `PORT=5000 node server.js`로 실행합니다. Windows PowerShell에서는 `$env:PORT=5000; node server.js`를 사용할 수 있습니다.
+터미널 창을 켜둔 채 브라우저에서 [http://localhost:4173](http://localhost:4173)을 여세요. 다른 포트를 사용하려면 Windows PowerShell에서 `$env:PORT=5000; node server.js`로 실행합니다.
 
 ## 포함한 화면과 동작
 
