@@ -59,6 +59,7 @@ const taskItems = [
 
 const categories = ["전체", "업데이트", "이벤트", "직업", "점검", "공략"];
 const game = { name: "아이온2", aliases: "aion2 아이온2" };
+const officialUpdateUrl = "https://aion2.plaync.com/ko-kr/board/update/list";
 const state = { filter: "전체", query: "", gameQuery: "" };
 const app = document.querySelector("#app");
 
@@ -166,7 +167,7 @@ function renderHome() {
 function renderGameIntro(title, description, crumb = title) {
   return `
     <div class="breadcrumb"><a href="#/">게임 찾기</a><span aria-hidden="true">›</span><a href="#/aion2">아이온2</a>${crumb === "아이온2" ? "" : `<span aria-hidden="true">›</span><span>${escapeHTML(crumb)}</span>`}</div>
-    <div class="page-heading"><div><span class="page-eyebrow">AION2 GAME HUB</span><h1>${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p></div>${crumb === "아이온2" ? `<span class="data-state"><i></i>공식 데이터 연결 전</span>` : ""}</div>`;
+    <div class="page-heading"><div><span class="page-eyebrow">AION2 GAME HUB</span><h1>${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p></div>${crumb === "아이온2" ? `<div class="page-heading-actions"><span class="data-state"><i></i>공식 데이터 연결 전</span><a class="official-link" href="${officialUpdateUrl}" target="_blank" rel="noopener noreferrer">공식 업데이트 보기 <span aria-hidden="true">↗</span></a></div>` : ""}</div>`;
 }
 
 function renderDemoNote() {
@@ -300,7 +301,7 @@ function renderDetail(id) {
           <section class="article-panel action-panel"><div><strong>정보가 정확하지 않나요?</strong><p>날짜, 수치, 직업 정보나 출처 문제를 알려주세요.</p></div><button class="secondary-button" data-action="report">정보 신고</button></section>
           <a class="back-link" href="#/aion2/updates">← 아이온2 전체 정보</a>
         </article>
-        <aside class="detail-side"><section class="source-panel"><span class="page-eyebrow">SOURCE & REVIEW</span><h2>공식 원문과 검토</h2><p>근거 링크와 확인 상태를 함께 확인할 수 있도록 구성했습니다.</p><div class="source-status-list"><div><span>원문 링크</span><strong>연결 전</strong></div><div><span>AI 분석</span><strong>예시</strong></div><div><span>운영자 검토</span><strong>검토 전</strong></div></div><button class="secondary-button full-width" data-action="source-info">공식 원문 보기 <span aria-hidden="true">↗</span></button></section></aside>
+        <aside class="detail-side"><section class="source-panel"><span class="page-eyebrow">SOURCE & REVIEW</span><h2>공식 원문과 검토</h2><p>세부 공지와 분석 출처가 연결되기 전에는 공식 업데이트 목록에서 직접 확인할 수 있습니다.</p><div class="source-status-list"><div><span>원문 링크</span><strong>세부 연결 전</strong></div><div><span>AI 분석</span><strong>예시</strong></div><div><span>운영자 검토</span><strong>검토 전</strong></div></div><a class="secondary-button full-width" href="${officialUpdateUrl}" target="_blank" rel="noopener noreferrer">공식 업데이트 목록 <span aria-hidden="true">↗</span></a></section></aside>
       </div>
     </main>`;
 }
@@ -425,7 +426,6 @@ app.addEventListener("click", (event) => {
   if (action === "login") openDialog("login");
   if (action === "report") openDialog("report");
   if (action === "close-dialog") app.querySelector("#app-dialog").close();
-  if (action === "source-info") showToast("공식 원문 연결 후 이곳에서 열 수 있어요.");
 });
 
 app.addEventListener("input", (event) => {
