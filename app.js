@@ -138,7 +138,7 @@ function renderHeader() {
           <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
           <span>오늘의 패치</span>
         </a>
-        ${inGame ? `<a class="header-game" href="#/aion2"><span class="header-divider" aria-hidden="true"></span>아이온2</a>
+        ${inGame ? `<a class="header-game" href="#/aion2"><span class="header-divider" aria-hidden="true"></span><img class="aion2-logo aion2-logo-header" src="./assets/aion2-logo.png" alt="" />아이온2</a>
           <button class="mobile-menu-button" data-action="mobile-menu" aria-label="게임 메뉴 열기" aria-expanded="false">☰</button>
           <nav class="main-nav" id="main-nav" aria-label="아이온2 메뉴">
             ${links.map(([label, href, route]) => `<a class="nav-link ${kind === route || (route === "updates" && kind === "detail") ? "active" : ""}" href="${href}" ${kind === route ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
@@ -167,7 +167,7 @@ function renderHome() {
 function renderGameIntro(title, description, crumb = title) {
   return `
     <div class="breadcrumb"><a href="#/">게임 찾기</a><span aria-hidden="true">›</span><a href="#/aion2">아이온2</a>${crumb === "아이온2" ? "" : `<span aria-hidden="true">›</span><span>${escapeHTML(crumb)}</span>`}</div>
-    <div class="page-heading"><div><span class="page-eyebrow">AION2 GAME HUB</span><h1>${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p></div>${crumb === "아이온2" ? `<div class="page-heading-actions"><span class="data-state"><i></i>공식 데이터 연결 전</span><a class="official-link" href="${officialUpdateUrl}" target="_blank" rel="noopener noreferrer">공식 업데이트 보기 <span aria-hidden="true">↗</span></a></div>` : ""}</div>`;
+    <div class="page-heading"><div><span class="page-eyebrow">AION2 GAME HUB</span><h1 class="${title === "아이온2" ? "game-title" : ""}">${title === "아이온2" ? '<img class="aion2-logo aion2-logo-title" src="./assets/aion2-logo.png" alt="" />' : ""}${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p></div>${crumb === "아이온2" ? `<div class="page-heading-actions"><span class="data-state"><i></i>공식 데이터 연결 전</span><a class="official-link" href="${officialUpdateUrl}" target="_blank" rel="noopener noreferrer">공식 업데이트 보기 <span aria-hidden="true">↗</span></a></div>` : ""}</div>`;
 }
 
 function renderDemoNote() {
@@ -343,7 +343,7 @@ function drawGameResults() {
   const matches = game.aliases.toLocaleLowerCase("ko-KR").includes(state.gameQuery.trim().toLocaleLowerCase("ko-KR"));
   results.innerHTML = matches ? `
     <a class="game-result" href="#/aion2" aria-label="아이온2 정보 열기">
-      <span class="game-result-mark" aria-hidden="true">A</span>
+      <img class="aion2-logo aion2-logo-result" src="./assets/aion2-logo.png" alt="" />
       <span class="game-result-copy"><strong>아이온2</strong><small>업데이트 · 직업 · 이벤트 · 공략</small></span>
       <span class="game-result-arrow" aria-hidden="true">→</span>
     </a>` : `<div class="no-games"><strong>검색 결과가 없습니다.</strong><span>게임 이름을 다시 확인해 주세요.</span></div>`;
