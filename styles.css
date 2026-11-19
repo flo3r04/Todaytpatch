@@ -76,6 +76,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .game-search-field svg { width: 19px; height: 19px; }
 .game-search-field input { font-size: 14px; }
 .game-results { margin-top: 12px; text-align: left; }
+.recent-searches { padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: 0 8px 20px rgba(37, 52, 86, .045); }
+.recent-searches-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.recent-searches-heading strong { font-size: 11px; }
+.recent-searches-heading button { padding: 3px 5px; border: 0; background: transparent; color: var(--muted-light); font: inherit; font-size: 10px; cursor: pointer; }
+.recent-searches-heading button:hover { color: var(--brand); }
+.recent-search-list { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 7px; }
+.recent-search-item { min-height: 30px; padding: 0 10px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-muted); color: var(--muted); font-size: 11px; cursor: pointer; }
+.recent-search-item:hover { border-color: var(--brand); color: var(--brand); }
+.recent-search-item svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.7; }
 .home-following { width: min(100%, 760px); margin-top: 20px; text-align: left; }
 .home-following-heading { margin-bottom: 11px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .home-following-heading h2 { margin: 4px 0 0; font-size: 16px; letter-spacing: -.035em; }

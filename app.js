@@ -9,7 +9,7 @@ const taskItems = [
 
 const categories = ["전체", "공지", "업데이트", "CM 이야기"];
 const game = { id: "aion2", name: "아이온2", aliases: "aion2 아이온2" };
-const state = { filter: "전체", query: "", gameQuery: "" };
+const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false };
 const app = document.querySelector("#app");
 
 function readStorage(key, fallback) {
@@ -41,8 +41,19 @@ applyTheme(readStorage("todaypatch.theme", "light"));
 const savedTasks = () => readStorage("todaypatch.tasks", {});
 const savedNews = () => readStorage("todaypatch.bookmarks", []);
 const followedGameIds = () => readStorage("todaypatch.followedGames", []);
+const recentGameSearches = () => {
+  const searches = readStorage("todaypatch.recentGameSearches", []);
+  return Array.isArray(searches) ? searches.filter((query) => typeof query === "string") : [];
+};
 const isSaved = (id) => savedNews().includes(id);
 const isGameFollowed = (id) => followedGameIds().includes(id);
+
+function rememberGameSearch(query) {
+  const normalizedQuery = String(query || "").trim();
+  if (!normalizedQuery) return;
+  const searches = recentGameSearches().filter((item) => item.toLocaleLowerCase("ko-KR") !== normalizedQuery.toLocaleLowerCase("ko-KR"));
+  writeStorage("todaypatch.recentGameSearches", [normalizedQuery, ...searches].slice(0, 5));
+}
 
 function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -127,13 +138,11 @@ function renderHome() {
   return `
     <main class="home-page">
       <section class="home-search" aria-labelledby="home-title">
-        <span class="home-eyebrow">TODAYPATCH</span>
         <h1 id="home-title">어떤 게임을 찾으세요?</h1>
         <p>공식 공지, 업데이트, CM 소식을 한곳에서 확인해 보세요.</p>
         <label class="search-field game-search-field">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg>
           <input id="game-search" type="search" value="${escapeHTML(state.gameQuery)}" placeholder="게임 이름 검색" autocomplete="off" aria-label="게임 이름 검색" />
-          <kbd>검색</kbd>
         </label>
         <div class="game-results" id="game-results" aria-live="polite"></div>
       </section>
@@ -170,7 +179,7 @@ function renderFollowedGames() {
   return `
     <section class="home-following" aria-labelledby="home-following-title">
       <div class="home-following-heading"><div><span class="home-guide-eyebrow">YOUR GAMES</span><h2 id="home-following-title">팔로우한 게임</h2></div><p>관심 게임의 최신 패치 날짜를 모아봐요.</p></div>
-      ${followed ? `<article class="followed-game-card"><a class="followed-game-link" href="#/aion2"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span class="game-result-copy"><strong>${escapeHTML(game.name)}</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a><button class="game-follow-button following" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-pressed="true">팔로잉</button></article>` : `<div class="following-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />검색 결과에서 팔로우를 눌러 관심 게임을 추가하세요.</p></div>`}
+      ${followed ? `<article class="followed-game-card"><a class="followed-game-link" href="#/aion2"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span class="game-result-copy"><strong>${escapeHTML(game.name)}</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a><button class="game-follow-button following" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-label="${escapeHTML(game.name)} 팔로우 해제" aria-pressed="true">팔로우 해제</button></article>` : `<div class="following-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />검색 결과에서 팔로우를 눌러 관심 게임을 추가하세요.</p></div>`}
     </section>`;
 }
 
@@ -361,15 +370,21 @@ function drawGameResults() {
   if (!results) return;
   const query = state.gameQuery.trim().toLocaleLowerCase("ko-KR");
   if (!query) {
-    results.innerHTML = "";
+    const searches = state.gameSearchFocused ? recentGameSearches() : [];
+    results.innerHTML = searches.length ? `
+      <section class="recent-searches" aria-label="최근 검색 내역">
+        <div class="recent-searches-heading"><strong>최근 검색</strong><button type="button" data-action="clear-search-history">전체 삭제</button></div>
+        <div class="recent-search-list">${searches.map((term) => `<button type="button" class="recent-search-item" data-action="repeat-search" data-query="${escapeHTML(term)}"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg><span>${escapeHTML(term)}</span></button>`).join("")}</div>
+      </section>` : "";
     return;
   }
   const matches = game.aliases.toLocaleLowerCase("ko-KR").includes(query);
   const latestPatchDate = gameData.lastPatchDate || "아직 수집 전";
+  const followed = isGameFollowed(game.id);
   results.innerHTML = matches ? `
     <div class="game-result">
-      <a class="game-result-open" href="#/aion2" aria-label="아이온2 정보 열기"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span class="game-result-copy"><strong>아이온2</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a>
-      <button class="game-follow-button ${isGameFollowed(game.id) ? "following" : ""}" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-pressed="${isGameFollowed(game.id)}">${isGameFollowed(game.id) ? "팔로잉" : "팔로우"}</button>
+      <a class="game-result-open" href="#/aion2" data-action="record-game-search" aria-label="아이온2 정보 열기"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span class="game-result-copy"><strong>아이온2</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a>
+      <button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-label="${followed ? "아이온2 팔로우 해제" : "아이온2 팔로우"}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button>
     </div>` : `<div class="no-games"><strong>검색 결과가 없습니다.</strong><span>게임 이름을 다시 확인해 주세요.</span></div>`;
 }
 
@@ -429,6 +444,22 @@ app.addEventListener("click", (event) => {
     state.query = "";
     render();
   }
+  if (action === "record-game-search") rememberGameSearch(state.gameQuery);
+  if (action === "clear-search-history") {
+    writeStorage("todaypatch.recentGameSearches", []);
+    drawGameResults();
+  }
+  if (action === "repeat-search") {
+    state.gameQuery = button.dataset.query || "";
+    state.gameSearchFocused = true;
+    rememberGameSearch(state.gameQuery);
+    const input = app.querySelector("#game-search");
+    if (input) {
+      input.value = state.gameQuery;
+      input.focus();
+    }
+    drawGameResults();
+  }
   if (action === "bookmark") {
     const bookmarks = savedNews();
     const wasSaved = bookmarks.includes(id);
@@ -438,6 +469,7 @@ app.addEventListener("click", (event) => {
   }
   if (action === "toggle-follow") {
     const gameId = button.dataset.gameId;
+    if (routeKind() === "home" && state.gameQuery.trim()) rememberGameSearch(state.gameQuery);
     const followed = followedGameIds();
     const wasFollowed = followed.includes(gameId);
     writeStorage("todaypatch.followedGames", wasFollowed ? followed.filter((item) => item !== gameId) : [...followed, gameId]);
@@ -477,10 +509,23 @@ app.addEventListener("input", (event) => {
   }
 });
 
+app.addEventListener("focusin", (event) => {
+  if (event.target.id !== "game-search") return;
+  state.gameSearchFocused = true;
+  drawGameResults();
+});
+
+app.addEventListener("focusout", (event) => {
+  if (event.target.id !== "game-search") return;
+  if (event.relatedTarget && app.querySelector("#game-results")?.contains(event.relatedTarget)) return;
+  state.gameSearchFocused = false;
+  window.setTimeout(drawGameResults, 0);
+});
+
 app.addEventListener("keydown", (event) => {
-  if (event.target.id === "game-search" && event.key === "Enter" && game.aliases.toLocaleLowerCase("ko-KR").includes(state.gameQuery.trim().toLocaleLowerCase("ko-KR"))) {
-    window.location.hash = "#/aion2";
-  }
+  if (event.target.id !== "game-search" || event.key !== "Enter") return;
+  rememberGameSearch(state.gameQuery);
+  if (game.aliases.toLocaleLowerCase("ko-KR").includes(state.gameQuery.trim().toLocaleLowerCase("ko-KR"))) window.location.hash = "#/aion2";
 });
 
 app.addEventListener("submit", (event) => {
@@ -493,6 +538,7 @@ app.addEventListener("submit", (event) => {
 window.addEventListener("hashchange", () => {
   state.filter = "전체";
   state.query = "";
+  state.gameSearchFocused = false;
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
