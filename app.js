@@ -58,7 +58,7 @@ const taskItems = [
 ];
 
 const categories = ["전체", "업데이트", "이벤트", "직업", "점검", "공략"];
-const game = { name: "아이온2", aliases: "aion2 아이온2", lastPatchDate: "2026. 11. 18." };
+const game = { name: "아이온2", aliases: "aion2 아이온2" };
 const state = { filter: "전체", query: "", gameQuery: "" };
 const app = document.querySelector("#app");
 
@@ -368,10 +368,11 @@ function drawGameResults() {
     return;
   }
   const matches = game.aliases.toLocaleLowerCase("ko-KR").includes(query);
+  const latestPatchDate = window.todaypatchGameData?.aion2?.lastPatchDate || "아직 수집 전";
   results.innerHTML = matches ? `
     <a class="game-result" href="#/aion2" aria-label="아이온2 정보 열기">
       <span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span>
-      <span class="game-result-copy"><strong>아이온2</strong><small>최근 패치 · ${game.lastPatchDate}</small></span>
+      <span class="game-result-copy"><strong>아이온2</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span>
       <span class="game-result-arrow" aria-hidden="true">→</span>
     </a>` : `<div class="no-games"><strong>검색 결과가 없습니다.</strong><span>게임 이름을 다시 확인해 주세요.</span></div>`;
 }
