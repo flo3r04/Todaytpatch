@@ -40,8 +40,6 @@ window.todaypatchGameData = {
           "조율석·돌파석·마석·영석·룬 상자·주문서 등 각인 아이템 다수 지급",
           "지급 아이템 중 오드 에너지·외형 변경권 등은 2027/3/3 05:00 만료, 일부 아이템은 서버 창고 이동 불가"
         ],
-        "summaryProvider": "openrouter",
-        "summaryModel": "inclusionai/ling-3.2-flash:free"
       },
       {
         "id": "notice-6afd6b683561665cf3cbc572",
@@ -62,8 +60,6 @@ window.todaypatchGameData = {
           "반복·조직적 비정상 플레이는 작업장으로 판단될 수 있고 보안 위협 징후 계정은 임시 보호 가능",
           "위반 사실이 없거나 의도치 않은 임시 보호 시 고객센터 문의 필요"
         ],
-        "summaryProvider": "openrouter",
-        "summaryModel": "inclusionai/ling-3.2-flash:free"
       },
       {
         "id": "notice-6afcfd6aadd8ebf0b13a730c",
@@ -84,8 +80,6 @@ window.todaypatchGameData = {
           "비각인 키나 보유가 0 미만이면 서버 이전, 비각인 키나 사용, 교환소 판매·정산, 거래소 판매·정산·구매 제한",
           "이후 획득 키나는 미회수 분 우선 충당, 보유가 0 이상으로 회복되면 제한 해제(별도 제재는 유지)"
         ],
-        "summaryProvider": "openrouter",
-        "summaryModel": "inclusionai/ling-3.2-flash:free"
       },
       {
         "id": "notice-6afd8530add8ebf0b13a7319",
@@ -106,8 +100,6 @@ window.todaypatchGameData = {
           "무료 서버 이전 신청은 11/18 20:00부터, 신청 전 정산 완료 확인 권고",
           "11/24 22:00부터 기존 신뢰도 기준 정산 한도 재적용"
         ],
-        "summaryProvider": "openrouter",
-        "summaryModel": "inclusionai/ling-3.2-flash:free"
       },
       {
         "id": "notice-6afcf37adf6d838d56bfd1d6",
@@ -128,8 +120,6 @@ window.todaypatchGameData = {
           "서버 이전 규칙의 NPC 상점 설명 오류: 실제는 주화 상점과 동일하게 현재·도착 서버 구매 내역 중 큰 값 적용",
           "조치 일정은 변동 가능하며 변경 시 본 공지로 추가 안내"
         ],
-        "summaryProvider": "openrouter",
-        "summaryModel": "inclusionai/ling-3.2-flash:free"
       },
       {
         "id": "update-6afcab38ebccad0e4b5bad5f",
@@ -150,8 +140,6 @@ window.todaypatchGameData = {
           "무료 서버 이전 오픈(도착 서버 슬롯 해금 비용 유지), 영지·주신의 기원 등 이전 규정 적용",
           "검성·수호성·살성·권성·호법성·궁성·치유성 스킬 조정, 상급 계승 비용 등 오류에 대한 키나·아이템 소급 지급"
         ],
-        "summaryProvider": "openrouter",
-        "summaryModel": "inclusionai/ling-3.2-flash:free"
       }
     ]
   }

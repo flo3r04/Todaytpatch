@@ -4,11 +4,8 @@ const path = require("node:path");
 const apiBase = "https://api-community.plaync.com/aion2";
 const dataPath = path.join(__dirname, "..", "data", "aion2.js");
 const sinceDate = process.env.AION2_CRAWL_SINCE || "2026-11-18";
-const aiProvider = (process.env.AI_PROVIDER || "openai").toLowerCase();
-const openRouterGemmaModel = "google/gemma-4-31b-it:free";
-const aiModel = aiProvider === "openrouter"
-  ? openRouterGemmaModel
-  : process.env.OPENAI_MODEL || "gpt-5.4-mini";
+const googleAiModel = "gemma-4-31b-it";
+const googleAiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${googleAiModel}:generateContent`;
 const summaryBatchSize = 8;
 const boards = [
   {
@@ -179,12 +176,22 @@ async function crawlArticle({ article, board }) {
 }
 
 function responseOutputText(response) {
-  return (response.output || [])
-    .flatMap((outputItem) => outputItem.content || [])
-    .find((contentItem) => contentItem.type === "output_text")?.text;
+  const parts = response.candidates?.[0]?.content?.parts || [];
+  return parts
+    .filter((part) => typeof part.text === "string" && !part.thought)
+    .map((part) => part.text)
+    .join("")
+    .trim();
 }
 
-async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0, formatAttempt = 0) {
+function retryDelaySeconds(response, result) {
+  const retryAfterHeader = Number(response.headers.get("Retry-After"));
+  const retryInfo = result?.error?.details?.find((detail) => String(detail["@type"] || "").includes("RetryInfo"));
+  const retryDelay = Number.parseFloat(String(retryInfo?.retryDelay || "").replace(/s$/, ""));
+  return Math.min(Math.max(retryDelay || retryAfterHeader || 60, 1), 120);
+}
+
+async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
   const inputItems = items.map(({ id, category, title, bodyText }) => ({
     id,
     category,
@@ -219,124 +226,61 @@ async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0, f
     "분석은 이용자에게 미칠 실제 영향과 확인할 행동을 짧게 설명하고, 본문에 없는 사실은 추측하지 마세요.",
     "핵심 내용은 최대 3개로 간결하게 정리하세요. 모호한 날짜나 조건은 확정적으로 바꾸지 마세요.",
     "입력 id를 그대로 사용하고, 각 입력 게시물에 결과를 하나씩 반환하세요.",
+    "반드시 지정된 JSON 스키마에 맞는 결과만 반환하세요.",
+    formatAttempt > 0 ? "이전 응답의 형식 검증에 실패했습니다. JSON 형식과 필수 항목을 다시 확인하세요." : "",
   ].join("\n");
   const headers = {
-    Authorization: `Bearer ${apiKey}`,
+    "x-goog-api-key": apiKey,
     "Content-Type": "application/json",
   };
-  let endpoint;
-  let requestBody;
+  const requestBody = {
+    systemInstruction: { parts: [{ text: instructions }] },
+    contents: [{ role: "user", parts: [{ text: JSON.stringify(inputItems) }] }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 6000,
+      responseMimeType: "application/json",
+      responseJsonSchema: schema,
+    },
+  };
 
-  if (aiProvider === "openrouter") {
-    endpoint = "https://openrouter.ai/api/v1/chat/completions";
-    headers["HTTP-Referer"] = "https://github.com/flo3r04/Todaytpatch";
-    headers["X-Title"] = "Todaypatch";
-    requestBody = {
-      model: modelName,
-      messages: [
-        {
-          role: "system",
-          content: `${instructions}\n반드시 summarize_aion2_posts 도구를 호출해 결과를 반환하세요. 도구 호출 외의 일반 텍스트는 반환하지 마세요.${formatAttempt > 0 ? "\n이전 응답의 형식 검증에 실패했습니다. 모든 필드를 빠짐없이 채워 도구를 정확히 한 번 호출하세요." : ""}`,
-        },
-        { role: "user", content: JSON.stringify(inputItems) },
-      ],
-      tools: [{
-        type: "function",
-        function: {
-          name: "summarize_aion2_posts",
-          description: "입력된 AION2 게시물들을 한국어로 요약하고 이용자 관점에서 분석합니다.",
-          parameters: schema,
-        },
-      }],
-      tool_choice: { type: "function", function: { name: "summarize_aion2_posts" } },
-      parallel_tool_calls: false,
-      max_tokens: 6000,
-    };
-  } else {
-    endpoint = "https://api.openai.com/v1/responses";
-    requestBody = {
-      model: aiModel,
-      store: false,
-      instructions,
-      input: JSON.stringify(inputItems),
-      text: {
-        format: {
-          type: "json_schema",
-          name: "aion2_notice_analysis",
-          strict: true,
-          schema,
-        },
-      },
-      max_output_tokens: 6000,
-    };
-  }
-
-  const response = await fetch(endpoint, {
+  const response = await fetch(googleAiEndpoint, {
     method: "POST",
     headers,
     body: JSON.stringify(requestBody),
   });
+  const responseText = await response.text();
   let result;
-  let errorBody = "";
-  if (aiProvider === "openrouter") {
-    errorBody = await response.text();
-    try {
-      result = JSON.parse(errorBody);
-    } catch {
-      result = null;
+  try {
+    result = JSON.parse(responseText);
+  } catch {
+    if ([429, 500, 502, 503, 504].includes(response.status) && attempt === 0) {
+      const retryAfterSeconds = retryDelaySeconds(response, null);
+      console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 한 번 재시도합니다.`);
+      await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
+      return summarizeBatch(items, apiKey, attempt + 1, formatAttempt);
     }
-    const apiError = result?.error;
-    if (!response.ok || apiError) {
-      const errorStatus = Number(apiError?.code || response.status);
-      const errorMetadata = apiError?.metadata || {};
-      const previousErrors = Array.isArray(errorMetadata.previous_errors) ? errorMetadata.previous_errors : [];
-      const isUpstreamRateLimit = (providerError) => Number(providerError?.code) === 429
-        || providerError?.metadata?.limit_source === "upstream_provider_shared_pool"
-        || /temporarily rate-limited upstream/i.test(`${providerError?.message || ""} ${providerError?.raw || ""}`);
-      const upstreamRateLimited = errorStatus === 429 || previousErrors.some(isUpstreamRateLimit);
-      const sharedProviderLimit = errorMetadata.limit_source === "upstream_provider_shared_pool"
-        || previousErrors.some((providerError) => providerError?.metadata?.limit_source === "upstream_provider_shared_pool"
-          || /temporarily rate-limited upstream/i.test(providerError?.raw || ""));
-      if (upstreamRateLimited && attempt === 0) {
-        const retryAfterHeader = Number(response.headers.get("Retry-After"));
-        const retryAfterProvider = previousErrors.find(isUpstreamRateLimit);
-        const retryAfterMetadata = Number(errorMetadata.retry_after_seconds || retryAfterProvider?.metadata?.retry_after_seconds);
-        const retryAfterSeconds = Math.min(
-          Math.max(retryAfterMetadata || retryAfterHeader || 60, 1),
-          120,
-        );
-        console.warn(`OpenRouter 또는 Gemma 제공처가 요청을 제한했습니다. ${retryAfterSeconds}초 대기 후 같은 Gemma 모델로 한 번 재시도합니다.`);
-        await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
-        return summarizeBatch(items, apiKey, modelName, attempt + 1, formatAttempt);
-      }
-      const limitMessage = sharedProviderLimit ? "Gemma 제공처가 계속 요청을 제한합니다. " : "";
-      throw new Error(`${limitMessage}같은 Gemma로 재시도했지만 실패했습니다. 다른 모델로 대체하지 않고 중단합니다. HTTP ${errorStatus} ${errorBody.slice(0, 500)}`);
-    }
-  } else {
-    if (!response.ok) {
-      errorBody = await response.text();
-      throw new Error(`openai 요약 요청 실패: HTTP ${response.status} ${errorBody.slice(0, 500)}`);
-    }
-    result = await response.json();
+    throw new Error(`Google AI Studio 응답을 JSON으로 읽지 못했습니다. HTTP ${response.status} ${responseText.slice(0, 500)}`);
   }
 
-  if (aiProvider === "openrouter" && result.model) {
-    const returnedModel = String(result.model).split(":")[0];
-    const requestedModel = modelName.split(":")[0];
-    if (returnedModel !== requestedModel) {
-      throw new Error(`요청 모델(${modelName})과 응답 모델(${result.model})이 달라 요약 저장을 중단합니다.`);
+  if (!response.ok || result.error) {
+    if ([429, 500, 502, 503, 504].includes(response.status) && attempt === 0) {
+      const retryAfterSeconds = retryDelaySeconds(response, result);
+      console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 한 번 재시도합니다.`);
+      await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
+      return summarizeBatch(items, apiKey, attempt + 1, formatAttempt);
     }
+    const apiMessage = result.error?.message || responseText;
+    throw new Error(`Google AI Studio 요약 요청 실패: HTTP ${response.status} ${String(apiMessage).slice(0, 500)}`);
   }
 
-  const message = result.choices?.[0]?.message;
-  const toolCall = message?.tool_calls?.find((call) => call.function?.name === "summarize_aion2_posts");
-  const outputText = aiProvider === "openrouter"
-    ? (typeof toolCall?.function?.arguments === "string" ? toolCall.function.arguments : "")
-    : responseOutputText(result);
+  const candidate = result.candidates?.[0];
+  const outputText = responseOutputText(result);
   let parsed;
   let formatError = "";
   try {
-    if (!outputText) throw new Error("요약 도구 응답이 없습니다.");
+    if (candidate?.finishReason === "MAX_TOKENS") throw new Error("응답이 토큰 한도로 잘렸습니다.");
+    if (!outputText) throw new Error("요약 응답이 없습니다.");
     parsed = JSON.parse(outputText);
   } catch (error) {
     formatError = error.message;
@@ -357,11 +301,11 @@ async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0, f
     });
 
   if (!validResult) {
-    if (aiProvider === "openrouter" && formatAttempt === 0) {
-      console.warn(`Gemma 요약 형식 검증 실패(${formatError || "필수 필드 누락"}). 같은 모델로 한 번 다시 요청합니다.`);
-      return summarizeBatch(items, apiKey, modelName, attempt, formatAttempt + 1);
+    if (formatAttempt === 0) {
+      console.warn(`Gemma 4 요약 형식 검증 실패(${formatError || "필수 필드 누락"}). 같은 모델로 한 번 다시 요청합니다.`);
+      return summarizeBatch(items, apiKey, attempt, formatAttempt + 1);
     }
-    throw new Error(`${aiProvider} 요약 응답 형식이 올바르지 않습니다${formatError ? `: ${formatError}` : "."}`);
+    throw new Error(`Google AI Studio 요약 응답 형식이 올바르지 않습니다${formatError ? `: ${formatError}` : "."}`);
   }
 
   return items.map((item) => {
@@ -372,16 +316,15 @@ async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0, f
       analysis: analysis.analysis,
       keyPoints: analysis.keyPoints.slice(0, 3),
       excerpt: analysis.summary,
-      summaryProvider: aiProvider,
-      summaryModel: aiProvider === "openrouter" ? result.model || modelName : aiModel,
+      summaryProvider: "google-ai-studio",
+      summaryModel: googleAiModel,
     };
   });
 }
 
 async function summarizeWithAI(items) {
-  const keyName = aiProvider === "openrouter" ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY";
-  const apiKey = process.env[keyName];
-  if (!apiKey) throw new Error(`${keyName} 환경 변수가 필요합니다. 기존 수집 데이터는 변경하지 않습니다.`);
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY 환경 변수가 필요합니다. 기존 수집 데이터는 변경하지 않습니다.");
 
   const summarized = [];
   for (let index = 0; index < items.length; index += summaryBatchSize) {
@@ -393,9 +336,7 @@ async function summarizeWithAI(items) {
 
 async function main() {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(sinceDate)) throw new Error("AION2_CRAWL_SINCE는 YYYY-MM-DD 형식이어야 합니다.");
-  if (!["openai", "openrouter"].includes(aiProvider)) throw new Error("AI_PROVIDER는 openai 또는 openrouter여야 합니다.");
-  const keyName = aiProvider === "openrouter" ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY";
-  if (!process.env[keyName]) throw new Error(`${keyName} 환경 변수가 필요합니다. 기존 수집 데이터는 변경하지 않습니다.`);
+  if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY 환경 변수가 필요합니다. 기존 수집 데이터는 변경하지 않습니다.");
   const boardArticles = (await Promise.all(boards.map(crawlBoard))).flat();
   const crawledItems = await mapWithConcurrency(boardArticles, 4, crawlArticle);
   crawledItems.sort((left, right) => new Date(right.postedAt) - new Date(left.postedAt));
