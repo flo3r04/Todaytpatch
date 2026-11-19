@@ -8,6 +8,7 @@ const aiProvider = (process.env.AI_PROVIDER || "openai").toLowerCase();
 const aiModel = aiProvider === "openrouter"
   ? process.env.OPENROUTER_MODEL || "google/gemma-4-31b-it:free"
   : process.env.OPENAI_MODEL || "gpt-5.4-mini";
+const openRouterFallbackModel = process.env.OPENROUTER_FALLBACK_MODEL ?? "openrouter/free";
 const summaryBatchSize = 8;
 const boards = [
   {
@@ -183,7 +184,7 @@ function responseOutputText(response) {
     .find((contentItem) => contentItem.type === "output_text")?.text;
 }
 
-async function summarizeBatch(items, apiKey) {
+async function summarizeBatch(items, apiKey, modelName = aiModel) {
   const inputItems = items.map(({ id, category, title, bodyText }) => ({
     id,
     category,
@@ -231,7 +232,7 @@ async function summarizeBatch(items, apiKey) {
     headers["HTTP-Referer"] = "https://github.com/flo3r04/Todaytpatch";
     headers["X-Title"] = "Todaypatch";
     requestBody = {
-      model: aiModel,
+      model: modelName,
       messages: [
         {
           role: "system",
@@ -266,11 +267,34 @@ async function summarizeBatch(items, apiKey) {
     headers,
     body: JSON.stringify(requestBody),
   });
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`${aiProvider} 요약 요청 실패: HTTP ${response.status} ${errorBody.slice(0, 500)}`);
+  let result;
+  let errorBody = "";
+  if (aiProvider === "openrouter") {
+    errorBody = await response.text();
+    try {
+      result = JSON.parse(errorBody);
+    } catch {
+      result = null;
+    }
+    const apiError = result?.error;
+    if (!response.ok || apiError) {
+      const errorStatus = Number(apiError?.code || response.status);
+      const errorMetadata = apiError?.metadata || {};
+      const sharedProviderLimit = errorStatus === 429 && errorMetadata.limit_source === "upstream_provider_shared_pool";
+      if (sharedProviderLimit && openRouterFallbackModel && modelName !== openRouterFallbackModel) {
+        console.warn(`OpenRouter 제공처 제한으로 ${modelName} 대신 ${openRouterFallbackModel}로 요약을 다시 요청합니다.`);
+        return summarizeBatch(items, apiKey, openRouterFallbackModel);
+      }
+      throw new Error(`openrouter 요약 요청 실패: HTTP ${errorStatus} ${errorBody.slice(0, 500)}`);
+    }
+  } else {
+    if (!response.ok) {
+      errorBody = await response.text();
+      throw new Error(`openai 요약 요청 실패: HTTP ${response.status} ${errorBody.slice(0, 500)}`);
+    }
+    result = await response.json();
   }
-  const result = await response.json();
+
   const openRouterContent = result.choices?.[0]?.message?.content;
   const outputText = aiProvider === "openrouter"
     ? (typeof openRouterContent === "string" ? openRouterContent : "")
@@ -294,7 +318,7 @@ async function summarizeBatch(items, apiKey) {
       keyPoints: analysis.keyPoints.slice(0, 3),
       excerpt: analysis.summary,
       summaryProvider: aiProvider,
-      summaryModel: aiModel,
+      summaryModel: aiProvider === "openrouter" ? result.model || modelName : aiModel,
     };
   });
 }

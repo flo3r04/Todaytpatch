@@ -33,7 +33,7 @@ $env:OPENROUTER_MODEL = "google/gemma-4-31b-it:free"
 npm run crawl
 ```
 
-`AI_PROVIDER`와 `OPENROUTER_MODEL`은 현재 PowerShell 창에만 적용됩니다. 새 PowerShell 창에서는 기본 OpenAI 설정으로 돌아갑니다. OpenRouter 키는 `OPENAI_API_KEY`와 다른 키이므로 `OPENROUTER_API_KEY`로 등록해야 합니다. OpenRouter 연결은 Chat Completions JSON 모드를 사용합니다. 이 모델은 JSON 형식은 지원하지만 JSON Schema를 강제하지 않으므로, 크롤러가 결과를 검사한 뒤에만 데이터를 갱신합니다.
+`AI_PROVIDER`와 `OPENROUTER_MODEL`은 현재 PowerShell 창에만 적용됩니다. 새 PowerShell 창에서는 기본 OpenAI 설정으로 돌아갑니다. OpenRouter 키는 `OPENAI_API_KEY`와 다른 키이므로 `OPENROUTER_API_KEY`로 등록해야 합니다. OpenRouter 연결은 Chat Completions JSON 모드를 사용합니다. 이 모델은 JSON 형식은 지원하지만 JSON Schema를 강제하지 않으므로, 크롤러가 결과를 검사한 뒤에만 데이터를 갱신합니다. 지정 모델이 `upstream_provider_shared_pool` 429 오류를 반환하면 `openrouter/free` 자동 라우터로 한 번 전환합니다. 대체 모델로도 실패하면 기존 데이터는 유지됩니다. 필요하면 `OPENROUTER_FALLBACK_MODEL` 환경 변수로 대체 모델을 지정하거나 빈 값으로 자동 대체를 끌 수 있습니다.
 
 - [공지](https://aion2.plaync.com/ko-kr/board/notice/list)
 - [업데이트](https://aion2.plaync.com/ko-kr/board/update/list)
