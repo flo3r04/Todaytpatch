@@ -8,6 +8,7 @@ const googleAiModel = "gemma-4-31b-it";
 const googleAiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${googleAiModel}:generateContent`;
 const maxSummaryBatchItems = 4;
 const maxSummaryBatchCharacters = 60000;
+const maxTransientRetries = 3;
 const boards = [
   {
     key: "notice",
@@ -213,11 +214,12 @@ function createSummaryBatches(items) {
   return batches;
 }
 
-function retryDelaySeconds(response, result) {
+function retryDelaySeconds(response, result, attempt) {
   const retryAfterHeader = Number(response.headers.get("Retry-After"));
   const retryInfo = result?.error?.details?.find((detail) => String(detail["@type"] || "").includes("RetryInfo"));
   const retryDelay = Number.parseFloat(String(retryInfo?.retryDelay || "").replace(/s$/, ""));
-  return Math.min(Math.max(retryDelay || retryAfterHeader || 60, 1), 120);
+  const exponentialDelay = 60 * (2 ** attempt);
+  return Math.min(Math.max(retryDelay || retryAfterHeader || 0, exponentialDelay), 1800);
 }
 
 async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
@@ -299,9 +301,9 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
   try {
     result = JSON.parse(responseText);
   } catch {
-    if ([429, 500, 502, 503, 504].includes(response.status) && attempt === 0) {
-      const retryAfterSeconds = retryDelaySeconds(response, null);
-      console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 한 번 재시도합니다.`);
+    if ([429, 500, 502, 503, 504].includes(response.status) && attempt < maxTransientRetries) {
+      const retryAfterSeconds = retryDelaySeconds(response, null, attempt);
+      console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 재시도합니다(${attempt + 1}/${maxTransientRetries}).`);
       await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
       return summarizeBatch(items, apiKey, attempt + 1, formatAttempt);
     }
@@ -309,9 +311,9 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
   }
 
   if (!response.ok || result.error) {
-    if ([429, 500, 502, 503, 504].includes(response.status) && attempt === 0) {
-      const retryAfterSeconds = retryDelaySeconds(response, result);
-      console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 한 번 재시도합니다.`);
+    if ([429, 500, 502, 503, 504].includes(response.status) && attempt < maxTransientRetries) {
+      const retryAfterSeconds = retryDelaySeconds(response, result, attempt);
+      console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 재시도합니다(${attempt + 1}/${maxTransientRetries}).`);
       await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
       return summarizeBatch(items, apiKey, attempt + 1, formatAttempt);
     }
