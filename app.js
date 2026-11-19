@@ -8,7 +8,7 @@ const taskItems = [
 ];
 
 const categories = ["전체", "공지", "업데이트", "CM 이야기"];
-const game = { name: "아이온2", aliases: "aion2 아이온2" };
+const game = { id: "aion2", name: "아이온2", aliases: "aion2 아이온2" };
 const state = { filter: "전체", query: "", gameQuery: "" };
 const app = document.querySelector("#app");
 
@@ -31,7 +31,9 @@ function writeStorage(key, value) {
 
 const savedTasks = () => readStorage("todaypatch.tasks", {});
 const savedNews = () => readStorage("todaypatch.bookmarks", []);
+const followedGameIds = () => readStorage("todaypatch.followedGames", []);
 const isSaved = (id) => savedNews().includes(id);
+const isGameFollowed = (id) => followedGameIds().includes(id);
 
 function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -120,6 +122,7 @@ function renderHome() {
         </label>
         <div class="game-results" id="game-results" aria-live="polite"></div>
       </section>
+      ${renderFollowedGames()}
       <section class="home-guide" aria-labelledby="home-guide-title">
         <div class="home-guide-heading">
           <div><span class="home-guide-eyebrow">QUICK GUIDE</span><h2 id="home-guide-title">이용 방법</h2></div>
@@ -144,6 +147,16 @@ function renderHome() {
         </div>
       </section>
     </main>`;
+}
+
+function renderFollowedGames() {
+  const followed = isGameFollowed(game.id);
+  const latestPatchDate = gameData.lastPatchDate || "아직 수집 전";
+  return `
+    <section class="home-following" aria-labelledby="home-following-title">
+      <div class="home-following-heading"><div><span class="home-guide-eyebrow">YOUR GAMES</span><h2 id="home-following-title">팔로우한 게임</h2></div><p>관심 게임의 최신 패치 날짜를 모아봐요.</p></div>
+      ${followed ? `<article class="followed-game-card"><a class="followed-game-link" href="#/aion2"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span class="game-result-copy"><strong>${escapeHTML(game.name)}</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a><button class="game-follow-button following" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-pressed="true">팔로잉</button></article>` : `<div class="following-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />검색 결과에서 팔로우를 눌러 관심 게임을 추가하세요.</p></div>`}
+    </section>`;
 }
 
 function renderGameIntro(title, description, crumb = title) {
@@ -188,7 +201,7 @@ function renderFilterBar(kind) {
     <div class="feed-tools">
       <label class="search-field news-search-field">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg>
-        <input id="news-search" type="search" value="${escapeHTML(state.query)}" placeholder="제목, 본문, 게시판 검색" autocomplete="off" aria-label="아이온2 정보 검색" />
+        <input id="news-search" type="search" value="${escapeHTML(state.query)}" placeholder="제목, 요약, 키워드 검색" autocomplete="off" aria-label="아이온2 정보 검색" />
         <kbd>검색</kbd>
       </label>
       <div class="filter-row" aria-label="정보 유형 필터">
@@ -269,20 +282,23 @@ function renderDetail(id) {
   const item = newsItems.find((news) => news.id === id);
   if (!item) return `<main class="page-width not-found"><h1>정보를 찾을 수 없어요.</h1><a class="primary-button" href="#/aion2/updates">아이온2 정보로 돌아가기</a></main>`;
   const bookmarked = isSaved(item.id);
-  const bodyText = item.bodyText || item.excerpt || "수집한 본문이 없습니다. 공식 원문을 확인해 주세요.";
+  const summary = item.summary || item.excerpt || "요약 정보를 준비하지 못했습니다. 공식 원문을 확인해 주세요.";
+  const analysis = item.analysis || "분석 정보가 없습니다. 아래 공식 원문에서 자세한 내용을 확인해 주세요.";
+  const keyPoints = Array.isArray(item.keyPoints) ? item.keyPoints : [];
   const sourceRoute = { notice: "notices", update: "updates", "cm-story": "cm-stories" }[item.sourceKey] || "news";
   return `
     <main class="page-width game-page detail-page">
-      ${renderGameIntro("게시물 상세", "크롤링한 본문과 공식 원문 링크를 확인하세요.", "게시물 상세")}
+      ${renderGameIntro("게시물 상세", "AI가 핵심 내용을 정리하고 분석한 결과를 확인하세요.", "게시물 상세")}
       <div class="detail-layout">
         <article class="detail-main">
           <div class="detail-title-row"><div><span class="category-pill category-${categoryClass(item.category)}">${escapeHTML(item.category)}</span><h1>${escapeHTML(item.title)}</h1><p>${escapeHTML(item.excerpt)}</p></div><button class="bookmark-button detail-bookmark ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg></button></div>
-          <section class="article-panel"><div class="panel-heading"><h2>게시물 본문</h2><a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 원문 보기 <span aria-hidden="true">↗</span></a></div><p class="article-body-text">${escapeHTML(bodyText)}</p></section>
+          <section class="article-panel summary-panel"><div class="panel-heading"><h2>AI 요약</h2><span class="summary-badge">핵심 정리</span></div><p class="summary-copy">${escapeHTML(summary)}</p></section>
+          <section class="article-panel analysis-panel"><div class="panel-heading"><h2>AI 분석</h2><span class="example-label">이용자 관점</span></div><p>${escapeHTML(analysis)}</p>${keyPoints.length ? `<ul class="key-point-list">${keyPoints.map((point) => `<li>${escapeHTML(point)}</li>`).join("")}</ul>` : ""}<a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 링크 열기 <span aria-hidden="true">↗</span></a></section>
           <section class="article-panel"><div class="panel-heading"><h2>수집 정보</h2><span class="example-label">공식 게시판</span></div><dl class="info-list"><div><dt>게시판</dt><dd>${escapeHTML(item.source)}</dd></div><div><dt>게시일</dt><dd>${escapeHTML(item.date)}</dd></div><div><dt>수정일</dt><dd>${item.updatedAt ? escapeHTML(formatDisplayDate(item.updatedAt)) : "수정 기록 없음"}</dd></div></dl></section>
           <section class="article-panel action-panel"><div><strong>정보가 정확하지 않나요?</strong><p>날짜, 수치, 직업 정보나 출처 문제를 알려주세요.</p></div><button class="secondary-button" data-action="report">정보 신고</button></section>
           <a class="back-link" href="#/aion2/${sourceRoute}">← ${escapeHTML(item.category)} 목록</a>
         </article>
-        <aside class="detail-side"><section class="source-panel"><span class="page-eyebrow">OFFICIAL SOURCE</span><h2>공식 게시물</h2><p>${escapeHTML(item.source)}에서 수집했습니다.</p><div class="source-status-list"><div><span>게시일</span><strong>${escapeHTML(item.date)}</strong></div><div><span>본문</span><strong>수집 완료</strong></div></div><a class="secondary-button full-width" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">원문 본문 열기 <span aria-hidden="true">↗</span></a></section></aside>
+        <aside class="detail-side"><section class="source-panel"><span class="page-eyebrow">OFFICIAL SOURCE</span><h2>공식 게시물</h2><p>${escapeHTML(item.source)}에서 수집한 내용을 요약했습니다. 정확한 조건과 상세 내용은 원문에서 확인해 주세요.</p><div class="source-status-list"><div><span>게시일</span><strong>${escapeHTML(item.date)}</strong></div><div><span>표시 내용</span><strong>요약 · 분석</strong></div></div><a class="secondary-button full-width" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 열기 <span aria-hidden="true">↗</span></a></section></aside>
       </div>
     </main>`;
 }
@@ -303,7 +319,7 @@ function visibleNews() {
   if (kind === "cm-stories") items = items.filter((item) => item.sourceKey === "cm-story");
   if (state.filter !== "전체") items = items.filter((item) => item.category === state.filter);
   const query = state.query.trim().toLocaleLowerCase("ko-KR");
-  if (query) items = items.filter((item) => `${item.title} ${item.excerpt} ${item.category} ${item.meta} ${item.bodyText}`.toLocaleLowerCase("ko-KR").includes(query));
+  if (query) items = items.filter((item) => `${item.title} ${item.excerpt} ${item.summary || ""} ${item.analysis || ""} ${(item.keyPoints || []).join(" ")} ${item.category} ${item.meta}`.toLocaleLowerCase("ko-KR").includes(query));
   return items;
 }
 
@@ -327,13 +343,12 @@ function drawGameResults() {
     return;
   }
   const matches = game.aliases.toLocaleLowerCase("ko-KR").includes(query);
-  const latestPatchDate = window.todaypatchGameData?.aion2?.lastPatchDate || "아직 수집 전";
+  const latestPatchDate = gameData.lastPatchDate || "아직 수집 전";
   results.innerHTML = matches ? `
-    <a class="game-result" href="#/aion2" aria-label="아이온2 정보 열기">
-      <span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span>
-      <span class="game-result-copy"><strong>아이온2</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span>
-      <span class="game-result-arrow" aria-hidden="true">→</span>
-    </a>` : `<div class="no-games"><strong>검색 결과가 없습니다.</strong><span>게임 이름을 다시 확인해 주세요.</span></div>`;
+    <div class="game-result">
+      <a class="game-result-open" href="#/aion2" aria-label="아이온2 정보 열기"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span class="game-result-copy"><strong>아이온2</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a>
+      <button class="game-follow-button ${isGameFollowed(game.id) ? "following" : ""}" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-pressed="${isGameFollowed(game.id)}">${isGameFollowed(game.id) ? "팔로잉" : "팔로우"}</button>
+    </div>` : `<div class="no-games"><strong>검색 결과가 없습니다.</strong><span>게임 이름을 다시 확인해 주세요.</span></div>`;
 }
 
 function render() {
@@ -398,6 +413,14 @@ app.addEventListener("click", (event) => {
     writeStorage("todaypatch.bookmarks", wasSaved ? bookmarks.filter((item) => item !== id) : [...bookmarks, id]);
     render();
     showToast(wasSaved ? "북마크를 해제했어요." : "소식을 저장했어요.");
+  }
+  if (action === "toggle-follow") {
+    const gameId = button.dataset.gameId;
+    const followed = followedGameIds();
+    const wasFollowed = followed.includes(gameId);
+    writeStorage("todaypatch.followedGames", wasFollowed ? followed.filter((item) => item !== gameId) : [...followed, gameId]);
+    render();
+    showToast(wasFollowed ? "팔로우를 해제했어요." : "아이온2를 팔로우했어요.");
   }
   if (action === "toggle-task") {
     const checked = savedTasks();

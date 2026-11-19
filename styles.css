@@ -56,6 +56,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .game-search-field svg { width: 19px; height: 19px; }
 .game-search-field input { font-size: 13px; }
 .game-results { margin-top: 12px; text-align: left; }
+.home-following { width: min(100%, 630px); margin-top: 27px; text-align: left; }
+.home-following-heading { margin-bottom: 11px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.home-following-heading h2 { margin: 4px 0 0; font-size: 15px; letter-spacing: -.035em; }
+.home-following-heading p { margin: 0 0 1px; color: var(--muted-light); font-size: 10px; }
+.followed-game-card { min-height: 70px; display: flex; align-items: center; gap: 12px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.followed-game-link { min-width: 0; flex: 1; display: flex; align-items: center; gap: 12px; }
+.followed-game-card .game-result-mark { width: 42px; height: 42px; }
+.following-empty { min-height: 64px; padding: 12px 14px; display: flex; align-items: center; gap: 11px; border: 1px dashed var(--line-strong); border-radius: 9px; background: rgba(255, 255, 255, .45); }
+.following-empty-icon { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 7px; background: var(--brand-soft); color: var(--brand); font-size: 17px; }
+.following-empty p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.65; }
+.following-empty strong { color: var(--ink); font-weight: 600; }
 .home-guide { width: min(100%, 630px); margin-top: 42px; text-align: left; }
 .home-guide-heading { margin-bottom: 13px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .home-guide-eyebrow { color: #8793a5; font-size: 8px; font-weight: 600; letter-spacing: .12em; }
@@ -71,12 +82,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .guide-step p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.65; }
 .game-result { min-height: 76px; display: flex; align-items: center; gap: 14px; padding: 13px 17px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
 .game-result:hover { transform: translateY(-1px); border-color: #cbd5ed; box-shadow: 0 8px 20px rgba(35, 51, 90, .05); }
+.game-result-open { min-width: 0; flex: 1; display: flex; align-items: center; gap: 14px; align-self: stretch; }
 .game-result-mark { width: 48px; height: 48px; display: block; flex: 0 0 auto; overflow: hidden; border-radius: 8px; background: #07111d; }
 .game-result-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .game-result-copy { display: grid; gap: 5px; }
 .game-result-copy strong { font-size: 13px; font-weight: 600; }
 .game-result-copy small { color: var(--muted); font-size: 10px; }
-.game-result-arrow { margin-left: auto; color: #8290a6; font-size: 17px; }
+.game-follow-button { min-width: 78px; min-height: 32px; padding: 0 11px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; border: 1px solid var(--brand); border-radius: 6px; background: var(--brand); color: #fff; font-size: 10px; font-weight: 600; cursor: pointer; transition: background 140ms ease, color 140ms ease, border-color 140ms ease; }
+.game-follow-button:hover { border-color: var(--brand-dark); background: var(--brand-dark); }
+.game-follow-button.following { border-color: var(--line-strong); background: #fff; color: var(--muted); }
+.game-follow-button.following:hover { border-color: #efc9cf; background: #fff6f7; color: #bd5260; }
 .no-games { min-height: 76px; display: grid; align-content: center; gap: 5px; padding: 12px 17px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .no-games strong { font-size: 11px; font-weight: 600; }
 .no-games span { color: var(--muted-light); font-size: 10px; }
@@ -180,7 +195,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .article-panel { margin-bottom: 12px; padding: 18px; }
 .panel-heading h2, .source-panel h2 { margin: 0; font-size: 14px; letter-spacing: -.025em; }
 .article-source-link { color: var(--brand); font-size: 9px; white-space: nowrap; }
-.article-body-text { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.85; white-space: pre-line; overflow-wrap: anywhere; }
+.summary-badge { padding: 5px 7px; border-radius: 5px; background: var(--brand-soft); color: var(--brand); font-size: 9px; }
+.summary-copy { margin: 12px 0 0; color: var(--ink); font-size: 12px; line-height: 1.9; white-space: pre-line; overflow-wrap: anywhere; }
+.analysis-panel > p { margin: 12px 0 10px; color: var(--muted); font-size: 10px; line-height: 1.85; white-space: pre-line; overflow-wrap: anywhere; }
+.key-point-list { margin: 0 0 13px; padding: 0; display: grid; gap: 7px; list-style: none; }
+.key-point-list li { position: relative; padding-left: 14px; color: var(--muted); font-size: 10px; line-height: 1.7; }
+.key-point-list li::before { position: absolute; top: .68em; left: 2px; width: 4px; height: 4px; border-radius: 50%; background: var(--brand); content: ""; }
 .example-label { color: var(--muted-light); font-size: 9px; }
 .article-panel > p { margin: 12px 0; color: var(--muted); font-size: 10px; line-height: 1.8; }
 .topic-list { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -251,6 +271,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .home-search h1 { font-size: 25px; }
   .home-search > p { margin-bottom: 21px; font-size: 11px; }
   .home-guide { margin-top: 34px; }
+  .home-following { margin-top: 23px; }
+  .home-following-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .following-empty { align-items: flex-start; }
   .home-guide-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
   .home-guide-heading p { line-height: 1.6; }
   .guide-steps { grid-template-columns: 1fr; gap: 8px; }
@@ -283,6 +306,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .detail-side { position: static; }
   .detail-title-row { padding: 15px 48px 14px 14px; }
   .detail-title-row h1 { font-size: 17px; }
+  .game-result { gap: 9px; padding-inline: 10px; }
+  .game-result-open { gap: 10px; }
+  .game-result-mark { width: 42px; height: 42px; }
+  .game-follow-button { min-width: 68px; min-height: 30px; padding-inline: 8px; font-size: 9px; }
   .article-panel, .task-panel { padding: 15px; }
   .info-list > div { grid-template-columns: 95px minmax(0, 1fr); }
   .site-footer { min-height: 58px; }
