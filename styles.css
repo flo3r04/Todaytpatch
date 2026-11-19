@@ -57,14 +57,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .nav-link.active { border-bottom-color: var(--brand); font-weight: 600; }
 .mobile-menu-button { display: none; }
 .theme-toggle { min-height: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; cursor: pointer; transition: border-color 140ms ease, color 140ms ease, background 140ms ease; }
-.header-caption ~ .theme-toggle { margin-left: auto; }
+.header-controls { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.header-controls.in-game { margin-left: 0; }
 .theme-toggle:hover { border-color: var(--brand); color: var(--brand); }
 .theme-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .dashboard-link { min-height: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; transition: border-color 140ms ease, color 140ms ease, background 140ms ease; }
 .dashboard-link:hover, .dashboard-link.active { border-color: var(--brand); color: var(--brand); }
 .dashboard-link svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .notification-wrap { position: relative; display: flex; align-items: center; flex: 0 0 auto; }
-.notification-toggle { position: relative; width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.notification-toggle { position: relative; width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--muted); cursor: pointer; }
 .notification-toggle:hover, .notification-toggle[aria-expanded="true"] { border-color: var(--line); background: var(--surface-muted); color: var(--ink); }
 .notification-toggle svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .notification-count { position: absolute; top: -3px; right: -3px; min-width: 17px; height: 17px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--surface); border-radius: 10px; background: #e95464; color: #fff; font-size: 9px; font-weight: 700; line-height: 1; }
@@ -430,7 +431,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .header-divider { height: 20px; }
   .mobile-menu-button { width: 32px; height: 32px; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--muted); font-size: 14px; cursor: pointer; }
   .header-caption { display: none; }
-  .theme-toggle { width: 32px; min-height: 32px; margin-left: auto; padding: 0; }
+  .theme-toggle { width: 32px; min-height: 32px; padding: 0; }
   .theme-toggle span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .dashboard-link { width: 32px; min-height: 32px; padding: 0; }
   .dashboard-link span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
