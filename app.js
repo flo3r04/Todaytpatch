@@ -541,21 +541,22 @@ function legacyCalendarEvents(item) {
     if (!dateTopics.test(line)) return;
     const dates = parseExplicitDates(line, item.date);
     if (!dates.length) return;
+    const context = `${item.title || ""} ${line}`;
     const range = dates.length > 1 && /~|～|부터|기간/.test(line);
-    const type = /시즌/i.test(line) ? "season"
-      : /서버\s*이전|이전\s*신청/i.test(line) ? "server-transfer"
-        : /쿠폰|보상|만료|수령/i.test(line) ? "reward-deadline"
+    const type = /시즌/i.test(context) ? "season"
+      : /서버\s*이전|이전\s*신청/i.test(context) ? "server-transfer"
+        : /쿠폰|보상|만료|수령/i.test(context) ? "reward-deadline"
           : /정책|적용\s*일정/i.test(line) ? "policy" : "event";
     const startAt = range || /신청\s*시작|시작\s*시점|오픈|적용\s*일정/i.test(line) ? dates[0].value : "";
     const endAt = range || /종료|마감|재적용|기한|까지/i.test(line) ? dates.at(-1).value : "";
     const deadlineAt = /만료|마감|기한|수령\s*기간/i.test(line) ? dates.at(-1).value : "";
     if (!startAt && !endAt && !deadlineAt) return;
     let title = "";
-    if (/PC\s*방/i.test(line)) title = /출석/i.test(line) ? "PC방 출석 이벤트" : "PC방 접속 이벤트";
+    if (/PC\s*방/i.test(context)) title = /출석/i.test(context) ? "PC방 출석 이벤트" : "PC방 접속 이벤트";
     else if (/재적용/i.test(line)) title = "거래소 정산 한도 재적용";
-    else if (/서버\s*이전|이전\s*신청/i.test(line)) title = "무료 서버 이전 일정";
-    else if (/쿠폰/i.test(line)) title = /만료/i.test(line) ? "쿠폰 보상 만료" : "감사 쿠폰 사용 기간";
-    else if (/시즌/i.test(line)) title = "시즌 일정";
+    else if (/서버\s*이전|이전\s*신청/i.test(context)) title = "무료 서버 이전 일정";
+    else if (/쿠폰/i.test(context)) title = /만료/i.test(line) ? "쿠폰 보상 만료" : "감사 쿠폰 사용 기간";
+    else if (/시즌/i.test(context)) title = "시즌 일정";
     else if (/운영정책/i.test(line)) title = "운영정책 변경 적용";
     else title = line.split(/[:：]/)[0].trim() || "공식 일정";
 
@@ -638,16 +639,36 @@ function formatEventDate(value) {
   return `${year}. ${Number(month)}. ${Number(day)}.${hour ? ` ${hour}:${minute}` : ""}`;
 }
 
+function calendarOccurrenceLabel(event, kind) {
+  if (kind === "start") {
+    if (event.type === "server-transfer") return "서버 이전 신청 접수 시작";
+    if (event.type === "season") return "시즌 시작";
+    if (event.type === "reward-deadline") return "쿠폰·보상 사용 시작";
+    if (event.type === "policy") return "정책 적용 시작";
+    return event.type === "event" ? "이벤트 시작" : "일정 시작";
+  }
+  if (kind === "deadline") {
+    if (event.type === "server-transfer") return "서버 이전 신청 마감";
+    if (event.type === "season") return "시즌 보상 마감";
+    return event.type === "reward-deadline" ? "보상 사용 마감" : "신청 마감";
+  }
+  if (event.type === "server-transfer") return "서버 이전 기간 종료";
+  if (event.type === "season") return "시즌 종료";
+  if (event.type === "reward-deadline") return "쿠폰·보상 기간 종료";
+  return event.type === "event" ? "이벤트 종료" : "일정 종료";
+}
+
 function eventOccurrences(events) {
   return events.flatMap((event) => [
-    event.startAt ? { date: eventDateKey(event.startAt), label: "시작", event, kind: "start" } : null,
-    event.endAt ? { date: eventDateKey(event.endAt), label: "종료", event, kind: "end" } : null,
-    event.deadlineAt ? { date: eventDateKey(event.deadlineAt), label: "마감", event, kind: "deadline" } : null,
+    event.startAt ? { date: eventDateKey(event.startAt), label: calendarOccurrenceLabel(event, "start"), event, kind: "start" } : null,
+    event.endAt ? { date: eventDateKey(event.endAt), label: calendarOccurrenceLabel(event, "end"), event, kind: "end" } : null,
+    event.deadlineAt ? { date: eventDateKey(event.deadlineAt), label: calendarOccurrenceLabel(event, "deadline"), event, kind: "deadline" } : null,
   ].filter(Boolean));
 }
 
 function renderCalendarEventLink(occurrence) {
-  return `<a class="calendar-marker ${escapeHTML(occurrence.kind)}" href="#/aion2/news/${encodeURIComponent(occurrence.event.newsId)}" title="${escapeHTML(`${occurrence.label} · ${occurrence.event.title}`)}"><span>${escapeHTML(occurrence.label)}</span>${escapeHTML(occurrence.event.title)}</a>`;
+  const accessibleLabel = `${occurrence.label} · ${occurrence.event.title}`;
+  return `<a class="calendar-marker ${escapeHTML(occurrence.kind)}" href="#/aion2/news/${encodeURIComponent(occurrence.event.newsId)}" title="${escapeHTML(accessibleLabel)}" aria-label="${escapeHTML(accessibleLabel)}">${escapeHTML(occurrence.label)}</a>`;
 }
 
 function renderUpcomingCalendarEvent(event) {
@@ -792,7 +813,7 @@ function renderDetail(id) {
   const detailedSections = sections.length
     ? `<div class="analysis-sections"><h3>원문 파트별 핵심 내용</h3>${sections.map((section) => {
       const details = Array.isArray(section.importantDetails) ? section.importantDetails : [];
-      return `<section class="analysis-section"><h4>${escapeHTML(section.heading)}</h4><p>${escapeHTML(section.summary)}</p>${details.length ? `<ul>${details.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>` : ""}</section>`;
+      return `<section class="analysis-section"><h4>${escapeHTML(section.heading)}</h4><p>${renderSentenceLines(section.summary)}</p>${details.length ? `<ul>${details.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>` : ""}</section>`;
     }).join("")}</div>`
     : keyPoints.length ? `<ul class="key-point-list">${keyPoints.map((point) => `<li>${escapeHTML(point)}</li>`).join("")}</ul>` : "";
   const sourceRoute = { notice: "notices", update: "updates", "cm-story": "cm-stories" }[item.sourceKey] || "news";
@@ -802,8 +823,8 @@ function renderDetail(id) {
       <div class="detail-layout">
         <article class="detail-main">
           <div class="detail-title-row"><div><span class="category-pill category-${categoryClass(item.category)}">${escapeHTML(item.category)}</span><h1>${escapeHTML(item.title)}</h1></div><button class="bookmark-button detail-bookmark ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg></button></div>
-          <section class="article-panel summary-panel"><div class="panel-heading"><h2>전체 내용 요약</h2><span class="summary-badge">전체 흐름</span></div><p class="summary-copy">${escapeHTML(summary)}</p></section>
-          <section class="article-panel analysis-panel"><div class="panel-heading"><h2>AI 분석</h2><span class="example-label">이용자 관점</span></div><p>${escapeHTML(analysis)}</p>${detailedSections}<a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 링크 열기 <span aria-hidden="true">↗</span></a></section>
+          <section class="article-panel summary-panel"><div class="panel-heading"><h2>전체 내용 요약</h2><span class="summary-badge">전체 흐름</span></div><p class="summary-copy">${renderSentenceLines(summary)}</p></section>
+          <section class="article-panel analysis-panel"><div class="panel-heading"><h2>AI 분석</h2><span class="example-label">이용자 관점</span></div><p class="analysis-copy">${renderSentenceLines(analysis)}</p>${detailedSections}<a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 링크 열기 <span aria-hidden="true">↗</span></a></section>
           <section class="article-panel"><div class="panel-heading"><h2>수집 정보</h2><span class="example-label">공식 게시판</span></div><dl class="info-list"><div><dt>게시판</dt><dd>${escapeHTML(item.source)}</dd></div><div><dt>게시일</dt><dd>${escapeHTML(item.date)}</dd></div><div><dt>수정일</dt><dd>${item.updatedAt ? escapeHTML(formatDisplayDate(item.updatedAt)) : "수정 기록 없음"}</dd></div></dl></section>
           <section class="article-panel action-panel"><div><strong>정보가 정확하지 않나요?</strong><p>날짜, 수치, 직업 정보나 출처 문제를 알려주세요.</p></div><button class="secondary-button" data-action="report">정보 신고</button></section>
           <a class="back-link" href="#/aion2/${sourceRoute}">← ${escapeHTML(item.category)} 목록</a>
@@ -811,6 +832,18 @@ function renderDetail(id) {
         <aside class="detail-side"><section class="source-panel"><span class="page-eyebrow">OFFICIAL SOURCE</span><h2>공식 게시물</h2><p>${escapeHTML(item.source)}에서 수집한 내용을 요약했습니다. 정확한 조건과 상세 내용은 원문에서 확인해 주세요.</p><div class="source-status-list"><div><span>게시일</span><strong>${escapeHTML(item.date)}</strong></div><div><span>표시 내용</span><strong>요약 · 분석</strong></div></div><a class="secondary-button full-width" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 열기 <span aria-hidden="true">↗</span></a></section></aside>
       </div>
     </main>`;
+}
+
+function renderSentenceLines(value) {
+  return String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .split(/\n+/)
+    .flatMap((paragraph) => paragraph.trim().replace(/[ \t]+/g, " ")
+      .replace(/([가-힣][.!?]["'”’」』]?)\s+(?=[A-Za-z0-9가-힣“‘"'(])/gu, "$1\n")
+      .split(/\n+/))
+    .filter(Boolean)
+    .map(escapeHTML)
+    .join("<br />");
 }
 
 function renderModal() {
