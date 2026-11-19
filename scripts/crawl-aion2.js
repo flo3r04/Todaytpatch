@@ -63,6 +63,19 @@ function koreanDateKey(value) {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
+function isCalendarDateValue(value) {
+  if (value === "") return true;
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/);
+  if (!match) return false;
+  const [, yearText, monthText, dayText, hour, minute] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return false;
+  return !hour || (Number(hour) <= 23 && Number(minute) <= 59);
+}
+
 function decodeHtmlEntities(value) {
   const namedEntities = {
     amp: "&",
@@ -255,8 +268,26 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
                 required: ["heading", "summary", "importantDetails"],
               },
             },
+            events: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  title: { type: "string" },
+                  type: { type: "string", enum: ["event", "season", "server-transfer", "reward-deadline", "policy", "other"] },
+                  startAt: { type: "string" },
+                  endAt: { type: "string" },
+                  deadlineAt: { type: "string" },
+                  conditions: { type: "array", items: { type: "string" } },
+                  reward: { type: "string" },
+                  details: { type: "string" },
+                },
+                required: ["title", "type", "startAt", "endAt", "deadlineAt", "conditions", "reward", "details"],
+              },
+            },
           },
-          required: ["id", "summary", "analysis", "sections"],
+          required: ["id", "summary", "analysis", "sections", "events"],
         },
       },
     },
@@ -270,6 +301,9 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
     "각 게시물의 분석은 이용자가 실제로 영향을 받는 점, 확인하거나 해야 할 행동, 적용 시점과 조건을 구체적으로 설명하세요.",
     "sections에는 원문에 있는 주요 제목이나 주제별 파트를 빠짐없이 나눠 하나씩 작성하세요. 원문 제목이 없으면 내용이 바뀌는 지점에 따라 파트를 구성하세요.",
     "각 파트마다 무엇이 바뀌거나 안내됐는지 1~3문장으로 요약하고, importantDetails에는 날짜·시간·수량·보상·대상·예외·제한·절차·직업별 변경처럼 놓치면 곤란한 사실을 항목별로 구체적으로 남기세요.",
+    "events에는 본문에 날짜가 명시된 이벤트·시즌·서버 이전·보상 수령/만료·정책 적용 일정을 각각 추출하세요. 날짜가 없는 추정 일정은 만들지 말고, 일정이 없으면 빈 배열을 반환하세요.",
+    "각 event의 startAt, endAt, deadlineAt은 한국 시간 기준 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm 형식으로 작성하고, 본문에 해당 시점이 없으면 빈 문자열로 두세요. 이벤트 시작/종료 기간, 보상 만료 시각, 신청 시작과 서버 이전 마감일을 구분하세요.",
+    "conditions에는 대상, 계정/서버별 제한, 참여 횟수, 접속 시간, 신청·수령 절차 등 이용자가 놓치면 안 되는 조건을 원문 근거대로 작성하세요. reward에는 명시된 보상을, details에는 적용 범위나 참고사항을 적으세요. 게시물당 일정은 최대 8개까지만 반환하세요.",
     "서로 다른 파트를 하나의 뭉뚱그린 문장으로 합치지 마세요. 중요한 정보가 아닌 인사말이나 반복 문구만 줄이고, 핵심 조건·수치·대상은 삭제하지 마세요.",
     "조건이 불명확하거나 일정이 미정이면 원문의 불확실성을 그대로 표시하세요.",
     "입력 id를 그대로 사용하고, 각 입력 게시물에 결과를 하나씩 반환하세요.",
@@ -343,6 +377,16 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
         && Boolean(analysis.summary.trim())
         && typeof analysis?.analysis === "string"
         && Boolean(analysis.analysis.trim())
+        && Array.isArray(analysis.events)
+        && analysis.events.length <= 8
+        && analysis.events.every((event) => typeof event.title === "string"
+          && Boolean(event.title.trim())
+          && ["event", "season", "server-transfer", "reward-deadline", "policy", "other"].includes(event.type)
+          && [event.startAt, event.endAt, event.deadlineAt].every((value) => typeof value === "string" && isCalendarDateValue(value))
+          && Array.isArray(event.conditions)
+          && event.conditions.every((condition) => typeof condition === "string")
+          && typeof event.reward === "string"
+          && typeof event.details === "string")
         && Array.isArray(analysis.sections)
         && analysis.sections.length > 0
         && analysis.sections.every((section) => typeof section.heading === "string"
@@ -373,6 +417,16 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
       summary: analysis.summary,
       analysis: analysis.analysis,
       sections,
+      events: analysis.events.map((event) => ({
+        title: event.title,
+        type: event.type,
+        startAt: event.startAt,
+        endAt: event.endAt,
+        deadlineAt: event.deadlineAt,
+        conditions: event.conditions,
+        reward: event.reward,
+        details: event.details,
+      })),
       keyPoints: sections.flatMap((section) => section.importantDetails),
       excerpt: makeExcerpt(analysis.summary, item.excerpt),
       summaryProvider: "google-ai-studio",

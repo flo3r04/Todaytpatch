@@ -146,9 +146,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .follow-context-menu [data-action="follow-game"]:focus-visible { background: var(--brand-soft); }
 .discover-panel { gap: 8px; }
 .discover-panel .home-game-panel-heading { margin-bottom: 0; }
-.discovery-tabs { display: flex; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.discovery-tabs { display: flex; align-items: center; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 .followed-tabs .discovery-tab { cursor: default; pointer-events: none; }
-.discovery-tab { min-height: 30px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.discovery-tab { min-height: 30px; padding: 0 9px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; line-height: 1; cursor: pointer; }
 .discovery-tab:hover { background: var(--surface-muted); color: var(--ink); }
 .discovery-tab.active { border-color: var(--line); background: var(--surface-muted); color: var(--brand); font-weight: 600; }
 .discovery-content { min-height: 0; flex: 1 1 auto; display: flex; }
@@ -166,19 +166,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .following-empty-icon { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 7px; background: var(--brand-soft); color: var(--brand); font-size: 18px; }
 .following-empty p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
 .following-empty strong { color: var(--ink); font-weight: 600; }
-.home-guide { width: min(100%, 760px); margin-top: 22px; text-align: left; }
-.home-guide-heading { margin-bottom: 9px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .home-guide-eyebrow { color: #8793a5; font-size: 9px; font-weight: 600; letter-spacing: .12em; }
-.home-guide-heading h2 { margin: 4px 0 0; font-size: 16px; letter-spacing: -.035em; }
-.home-guide-heading > .secondary-button { flex: 0 0 auto; }
-.guide-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
-.guide-step { min-width: 0; min-height: 112px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, .76); }
-.guide-step-top { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
-.guide-step-number { color: #97a2b2; font-size: 10px; font-weight: 600; letter-spacing: .08em; }
-.guide-step-icon { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 7px; background: var(--brand-soft); color: var(--brand); }
-.guide-step-icon svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
-.guide-step h3 { margin: 0 0 5px; font-size: 11px; font-weight: 600; }
-.guide-step p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.65; }
 .game-result { min-height: 76px; display: flex; align-items: center; gap: 14px; padding: 13px 17px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
 .game-result:hover { transform: translateY(-1px); border-color: #cbd5ed; box-shadow: 0 8px 20px rgba(35, 51, 90, .05); }
 .game-result-open { min-width: 0; flex: 1; display: flex; align-items: center; gap: 14px; align-self: stretch; }
@@ -375,7 +363,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 :root[data-theme="dark"] .following-empty,
 :root[data-theme="dark"] .followed-game-tile:hover,
 :root[data-theme="dark"] .followed-game-tile:focus-visible,
-:root[data-theme="dark"] .guide-step,
 :root[data-theme="dark"] .demo-note,
 :root[data-theme="dark"] .empty-state { border-color: var(--line); background: var(--surface); }
 :root[data-theme="dark"] .demo-icon { background: var(--surface-muted); color: var(--muted); }
@@ -479,11 +466,98 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .post-delete-button { position: absolute; top: 10px; right: 10px; min-height: 30px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: 11px; cursor: pointer; }
 .post-delete-button:hover { border-color: #efc9cf; color: #bd5260; }
 
+.dashboard-calendar { margin-top: 15px; }
+.calendar-section-heading { align-items: flex-end; }
+.calendar-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(270px, .9fr); gap: 13px; }
+.calendar-month-view,
+.calendar-upcoming { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.calendar-month-heading { margin-bottom: 11px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.calendar-month-heading strong { font-size: 15px; }
+.calendar-nav-button { width: 29px; height: 29px; display: inline-grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; }
+.calendar-nav-button:hover { border-color: var(--brand); color: var(--brand); }
+.calendar-weekdays,
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.calendar-weekdays { margin-bottom: 4px; }
+.calendar-weekdays span { padding: 5px 0; color: var(--muted-light); font-size: 10px; font-weight: 600; text-align: center; }
+.calendar-day { min-width: 0; min-height: 70px; padding: 4px; border-top: 1px solid var(--line); border-right: 1px solid var(--line); background: var(--surface); }
+.calendar-day:nth-child(7n + 1) { border-left: 1px solid var(--line); }
+.calendar-day:nth-last-child(-n + 7) { border-bottom: 1px solid var(--line); }
+.calendar-day-number { width: 21px; height: 21px; display: grid; place-items: center; border-radius: 50%; color: var(--ink); font-size: 10px; }
+.calendar-day.outside-month { background: var(--surface-muted); }
+.calendar-day.outside-month .calendar-day-number { color: var(--muted-light); }
+.calendar-day.today .calendar-day-number { background: var(--brand); color: #fff; font-weight: 700; }
+.calendar-day-events { display: grid; gap: 2px; }
+.calendar-marker { min-width: 0; padding: 2px 3px; display: block; overflow: hidden; border-radius: 3px; background: var(--brand-soft); color: var(--brand-dark); font-size: 9px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-marker span { margin-right: 3px; font-weight: 700; }
+.calendar-marker.end,
+.calendar-marker.deadline { background: #fff1e8; color: #a84e20; }
+.calendar-more-events { color: var(--muted-light); font-size: 9px; }
+.calendar-legend { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 10px; }
+.calendar-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.calendar-legend i { width: 8px; height: 8px; display: inline-block; border-radius: 2px; background: var(--brand-soft); }
+.calendar-legend i.end { background: #fff1e8; }
+.calendar-upcoming h3 { margin: 0 0 10px; font-size: 14px; }
+.calendar-upcoming-list { max-height: 440px; display: grid; gap: 7px; overflow: auto; }
+.calendar-upcoming-item { min-width: 0; padding: 9px; display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.calendar-upcoming-date { display: grid; align-content: start; gap: 4px; }
+.calendar-upcoming-date strong { color: var(--ink); font-size: 10px; line-height: 1.4; }
+.calendar-upcoming-date span { color: var(--brand); font-size: 9px; }
+.calendar-upcoming-copy { min-width: 0; }
+.calendar-upcoming-copy > a { display: block; color: var(--ink); font-size: 11px; line-height: 1.5; }
+.calendar-upcoming-copy > a:hover { color: var(--brand); }
+.calendar-upcoming-copy p { margin: 3px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; }
+.calendar-upcoming-copy ul { margin: 4px 0 0; padding-left: 14px; display: grid; gap: 3px; color: var(--muted); }
+.calendar-upcoming-copy li { font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.calendar-upcoming-copy small { margin-top: 4px; display: block; color: var(--muted-light); font-size: 9px; line-height: 1.5; }
+.calendar-empty { min-height: 110px; padding: 14px; display: grid; align-content: center; gap: 6px; border: 1px dashed var(--line-strong); border-radius: 7px; background: var(--surface); }
+.calendar-empty strong { font-size: 12px; }
+.calendar-empty p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+
+.chatbot-dock { position: fixed; z-index: 80; right: 22px; bottom: 22px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.chatbot-launcher { min-width: 58px; height: 50px; padding: 0 15px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 25px; background: var(--brand); color: #fff; box-shadow: 0 8px 24px rgba(36, 54, 103, .25); font-size: 13px; font-weight: 600; cursor: pointer; transition: transform 140ms ease, background 140ms ease; }
+.chatbot-launcher:hover { background: var(--brand-dark); transform: translateY(-2px); }
+.chatbot-launcher.open { width: 46px; min-width: 46px; height: 46px; padding: 0; font-size: 25px; font-weight: 400; }
+.chatbot-launcher svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.chatbot-panel { width: min(380px, calc(100vw - 32px)); height: min(560px, calc(100dvh - 100px)); min-height: 310px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.chatbot-panel[hidden] { display: none; }
+.chatbot-heading { min-height: 58px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.chatbot-heading > div:first-child { min-width: 0; display: grid; gap: 3px; }
+.chatbot-heading strong { font-size: 13px; }
+.chatbot-heading small { color: var(--muted-light); font-size: 10px; }
+.chatbot-heading > div:last-child { display: flex; gap: 4px; }
+.chatbot-heading button { width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+.chatbot-heading button:hover { border-color: var(--line); background: var(--surface-muted); color: var(--ink); }
+.chatbot-messages { min-height: 0; padding: 13px 11px; flex: 1; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; background: var(--page); }
+.chat-message { max-width: 100%; display: flex; align-items: flex-start; gap: 7px; }
+.chat-message.user { justify-content: flex-end; }
+.chat-avatar { width: 25px; height: 25px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; }
+.chat-bubble { max-width: calc(100% - 32px); padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.chat-message.user .chat-bubble { max-width: 85%; border-color: var(--brand); background: var(--brand); color: #fff; }
+.chat-bubble p { margin: 0; font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; }
+.chat-bubble small { margin-top: 6px; display: block; color: var(--muted); font-size: 10px; }
+.chat-bubble ul { margin: 7px 0 0; padding-left: 17px; display: grid; gap: 5px; }
+.chat-bubble li { color: var(--muted); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+.chat-message.user .chat-bubble p { color: #fff; }
+.chat-sources { margin-top: 8px; display: grid; gap: 5px; }
+.chat-sources a { color: var(--brand); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.chat-sources a:hover { text-decoration: underline; }
+.chatbot-form { min-height: 56px; padding: 9px; display: flex; align-items: center; gap: 7px; border-top: 1px solid var(--line); background: var(--surface); }
+.chatbot-form input { min-width: 0; height: 37px; padding: 0 10px; flex: 1; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--page); color: var(--ink); font-size: 11px; }
+.chatbot-form input:focus { border-color: var(--brand); outline: none; }
+.chatbot-form button { width: 37px; height: 37px; flex: 0 0 auto; border: 0; border-radius: 7px; background: var(--brand); color: #fff; font-size: 20px; line-height: 1; cursor: pointer; }
+.chatbot-form button:hover { background: var(--brand-dark); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+:root[data-theme="dark"] .calendar-marker.end,
+:root[data-theme="dark"] .calendar-marker.deadline { background: #493224; color: #ffc49e; }
+:root[data-theme="dark"] .calendar-legend i.end { background: #493224; }
+
 @media (max-width: 900px) {
   .header-inner { gap: 10px; }
   .main-nav { gap: 8px; }
   .quick-links { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .detail-layout { grid-template-columns: minmax(0, 1fr) 245px; gap: 13px; }
+  .calendar-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 680px) {
@@ -510,7 +584,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .home-page { min-height: calc(100vh - 125px); padding: 54px 16px 36px; }
   .home-search h1 { font-size: 26px; }
   .home-search > p { margin-bottom: 21px; font-size: 12px; }
-  .home-guide { margin-top: 22px; }
   .home-following { margin-top: 18px; }
   .home-following-layout { grid-template-columns: 1fr; gap: 9px; }
   .home-game-panel { min-height: 0; padding: 9px; }
@@ -521,11 +594,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .followed-game-tile { min-height: 77px; padding: 5px 2px 4px; }
   .followed-game-icon { width: 48px; height: 48px; border-radius: 10px; }
   .followed-game-name { font-size: 11px; }
-  .home-guide-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
-  .home-guide-heading > .secondary-button { min-height: 32px; padding-inline: 10px; }
-  .guide-steps { grid-template-columns: 1fr; gap: 8px; }
-  .guide-step { min-height: 0; padding: 12px 14px; }
-  .guide-step-top { margin-bottom: 7px; }
   .game-page { min-height: calc(100vh - 125px); padding-top: 24px; padding-bottom: 42px; }
   .page-heading { margin: 19px 0 15px; align-items: flex-start; flex-direction: column; gap: 9px; }
   .page-heading h1 { font-size: 26px; }
@@ -558,6 +626,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .dashboard-stat span { font-size: 10px; }
   .dashboard-stat strong { font-size: 18px; }
   .dashboard-columns { grid-template-columns: 1fr; gap: 10px; }
+  .calendar-month-view, .calendar-upcoming { padding: 9px; }
+  .calendar-day { min-height: 57px; padding: 2px; }
+  .calendar-marker { padding: 2px; font-size: 8px; }
+  .calendar-upcoming-item { grid-template-columns: 76px minmax(0, 1fr); }
+  .chatbot-dock { right: 12px; bottom: 12px; gap: 8px; }
+  .chatbot-panel { width: min(380px, calc(100vw - 24px)); height: min(540px, calc(100dvh - 92px)); }
   .dashboard-section { padding: 14px; }
   .dashboard-section-heading h2 { font-size: 16px; }
   .dashboard-news-list .news-main { padding: 11px 40px 20px 12px; }

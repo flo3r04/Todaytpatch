@@ -14,7 +14,7 @@ const gameCatalog = [
   { id: "dokkaebi-world", name: "도깨비의 세계", icon: "./assets/dokkaebi-world.png", route: "#/game/dokkaebi-world" },
   { id: "temppal", name: "템빨", icon: "./assets/temppal.png", route: "#/game/temppal", upcoming: true },
 ];
-const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false, discoveryView: "other", tutorialStep: 0, tutorialShownInSession: false };
+const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false, discoveryView: "other", tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [] };
 const app = document.querySelector("#app");
 
 function readStorage(key, fallback) {
@@ -81,15 +81,16 @@ function rememberCurrentGameNews(gameId) {
 function notifyBrowserOfNewPosts(items) {
   if (!readStorage("todaypatch.browserNotifications", false) || !("Notification" in window) || Notification.permission !== "granted" || !items.length) return;
   const latest = items[0];
+  const isCalendarAlert = latest.category === "기간 알림";
   try {
-    const notification = new Notification("아이온2 새 소식", {
-      body: items.length > 1 ? `${latest.title} 외 ${items.length - 1}건` : latest.title,
+    const notification = new Notification(isCalendarAlert ? "아이온2 일정 알림" : "아이온2 새 소식", {
+      body: latest.body || (items.length > 1 ? `${latest.title} 외 ${items.length - 1}건` : latest.title),
       icon: "./assets/aion2-logo.png",
-      tag: "todaypatch-aion2-news",
+      tag: isCalendarAlert ? "todaypatch-aion2-calendar" : "todaypatch-aion2-news",
     });
     notification.onclick = () => {
       window.focus();
-      window.location.hash = `#/aion2/news/${encodeURIComponent(latest.id)}`;
+      window.location.hash = `#/aion2/news/${encodeURIComponent(latest.newsId || latest.id)}`;
       notification.close();
     };
   } catch {
@@ -124,6 +125,48 @@ function syncFollowedNewsNotifications() {
     createdAt: new Date().toISOString(),
     read: false,
   }));
+  if (!added.length) return;
+  writeStorage("todaypatch.notifications", [...added, ...notifications].slice(0, 100));
+  notifyBrowserOfNewPosts(added);
+}
+
+function calendarDaysUntil(value) {
+  const key = eventDateKey(value);
+  if (!key) return null;
+  const [year, month, day] = key.split("-").map(Number);
+  const today = localDateKey(new Date()).split("-").map(Number);
+  return Math.round((Date.UTC(year, month - 1, day) - Date.UTC(today[0], today[1] - 1, today[2])) / 86400000);
+}
+
+function syncCalendarNotifications() {
+  if (!followedGameIds().includes(game.id)) return;
+  const notifications = storedNotifications();
+  const existingIds = new Set(notifications.map((item) => item.id));
+  const added = [];
+  for (const event of dashboardCalendarEvents()) {
+    const target = event.deadlineAt || event.endAt;
+    const daysUntil = calendarDaysUntil(target);
+    if (daysUntil === null || daysUntil < 0 || daysUntil > 7) continue;
+    const reminderKey = daysUntil === 0 ? "today" : daysUntil === 1 ? "tomorrow" : "week";
+    const id = `calendar-${event.newsId}-${eventDateKey(target)}-${reminderKey}`;
+    if (existingIds.has(id)) continue;
+    const deadlineLabel = event.deadlineAt ? "마감" : "종료";
+    const timeLabel = daysUntil === 0 ? `오늘 ${deadlineLabel}` : daysUntil === 1 ? `내일 ${deadlineLabel}` : `${daysUntil}일 후 ${deadlineLabel}`;
+    const body = event.conditions.slice(0, 2).join(" · ") || event.reward || event.details || formatEventDate(target);
+    added.push({
+      id,
+      newsId: event.newsId,
+      gameId: event.gameId,
+      title: `${event.title} · ${timeLabel}`,
+      category: "기간 알림",
+      date: formatEventDate(target),
+      body,
+      url: event.url,
+      createdAt: new Date().toISOString(),
+      read: false,
+    });
+    existingIds.add(id);
+  }
   if (!added.length) return;
   writeStorage("todaypatch.notifications", [...added, ...notifications].slice(0, 100));
   notifyBrowserOfNewPosts(added);
@@ -199,10 +242,11 @@ function renderNotificationControl() {
       : `<button class="notification-setting-button" type="button" data-action="toggle-browser-notifications">브라우저 알림 ${browserEnabled ? "끄기" : "켜기"}</button>`;
   const list = notifications.length
     ? `<div class="notification-list">${notifications.slice(0, 30).map((item) => {
-      const exists = newsItems.some((news) => news.id === item.id);
-      const href = exists ? `#/aion2/news/${encodeURIComponent(item.id)}` : item.url;
+      const newsId = item.newsId || item.id;
+      const exists = newsItems.some((news) => news.id === newsId);
+      const href = exists ? `#/aion2/news/${encodeURIComponent(newsId)}` : item.url;
       const target = exists ? "" : 'target="_blank" rel="noopener noreferrer"';
-      return `<a class="notification-item ${item.read ? "read" : "unread"}" href="${escapeHTML(href)}" ${target} data-action="open-notification" data-id="${escapeHTML(item.id)}"><span class="notification-dot" aria-hidden="true"></span><span class="notification-copy"><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.gameId === game.id ? game.name : item.gameId)} · ${escapeHTML(item.category || "새 소식")} · ${escapeHTML(item.date || "")}</small></span></a>`;
+      return `<a class="notification-item ${item.read ? "read" : "unread"}" href="${escapeHTML(href)}" ${target} data-action="open-notification" data-id="${escapeHTML(item.id)}"><span class="notification-dot" aria-hidden="true"></span><span class="notification-copy"><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.gameId === game.id ? game.name : item.gameId)} · ${escapeHTML(item.category || "새 소식")} · ${escapeHTML(item.date || "")}</small>${item.body ? `<small>${escapeHTML(item.body)}</small>` : ""}</span></a>`;
     }).join("")}</div>`
     : `<div class="notification-empty"><strong>새 알림이 없습니다.</strong><p>팔로우한 게임의 새 글은 크롤링 후 페이지를 방문하면 여기에 표시됩니다.</p></div>`;
 
@@ -274,12 +318,6 @@ function renderHome() {
         <div class="game-results" id="game-results" aria-live="polite"></div>
       </section>
       ${renderFollowedGames()}
-      <section class="home-guide" aria-labelledby="home-guide-title">
-        <div class="home-guide-heading">
-          <div><span class="home-guide-eyebrow">QUICK GUIDE</span><h2 id="home-guide-title">이용 방법</h2></div>
-          <button class="secondary-button" type="button" data-action="open-tutorial">튜토리얼 보기</button>
-        </div>
-      </section>
     </main>`;
 }
 
@@ -455,6 +493,207 @@ function renderDashboardFollowedGame(item) {
   return `<article class="dashboard-game-item"><a class="dashboard-game-link" href="${escapeHTML(item.route)}"><span class="game-result-mark" aria-hidden="true"><img src="${escapeHTML(item.icon)}" alt="" /></span><span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(status)}</small></span></a><button class="game-follow-button following" type="button" data-action="toggle-follow" data-game-id="${escapeHTML(item.id)}" aria-label="${escapeHTML(item.name)} 팔로우 해제" aria-pressed="true">팔로우 해제</button></article>`;
 }
 
+function normalizeCalendarDate(value) {
+  const match = String(value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/);
+  if (!match) return "";
+  const [, yearText, monthText, dayText, hour, minute] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return "";
+  if (hour && (Number(hour) > 23 || Number(minute) > 59)) return "";
+  return `${yearText}-${monthText}-${dayText}${hour ? `T${hour}:${minute}` : ""}`;
+}
+
+function parseExplicitDates(text, articleDate) {
+  const base = String(articleDate || "").match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  const baseYear = Number(base?.[1]) || new Date().getFullYear();
+  const baseMonth = Number(base?.[2]) || 1;
+  const datePattern = /(?:(\d{4})\s*(?:년|[./-])\s*(\d{1,2})\s*(?:월|[./-])\s*(\d{1,2})\s*일?|(?<!\d)(\d{1,2})\s*(?:월|[./-])\s*(\d{1,2})\s*일?)(?:\s*\([^)]*\))?/g;
+  const dates = [];
+  for (const match of String(text || "").matchAll(datePattern)) {
+    let year = Number(match[1]) || baseYear;
+    const month = Number(match[2] || match[4]);
+    const day = Number(match[3] || match[5]);
+    if (!match[1] && month < baseMonth) year += 1;
+    const tail = String(text).slice(match.index + match[0].length);
+    const time = tail.match(/^\s*(?:(\d{1,2}):(\d{2})|(\d{1,2})시(?:\s*(\d{1,2})분)?)/);
+    const dateValue = normalizeCalendarDate(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}${time ? `T${String(time[1] || time[3]).padStart(2, "0")}:${String(time[2] || time[4] || "00").padStart(2, "0")}` : ""}`);
+    if (dateValue) dates.push({ value: dateValue, index: match.index, length: match[0].length });
+  }
+  return dates;
+}
+
+function stripExplicitDates(text) {
+  const datePattern = /(?:(\d{4})\s*(?:년|[./-])\s*(\d{1,2})\s*(?:월|[./-])\s*(\d{1,2})\s*일?|(?<!\d)(\d{1,2})\s*(?:월|[./-])\s*(\d{1,2})\s*일?)(?:\s*\([^)]*\))?/g;
+  return String(text || "").replace(datePattern, " ").replace(/[~～]/g, " ").replace(/\s+/g, " ").replace(/^[,;:：\s]+|[,;:：\s]+$/g, "").trim();
+}
+
+function legacyCalendarEvents(item) {
+  const sectionDetails = (Array.isArray(item.sections) ? item.sections : []).flatMap((section) => [
+    ...(Array.isArray(section.importantDetails) ? section.importantDetails : []),
+  ]);
+  const lines = [...new Set([...(Array.isArray(item.keyPoints) ? item.keyPoints : []), ...sectionDetails].filter((line) => typeof line === "string" && line.trim()))];
+  const dateTopics = /이벤트|시즌|쿠폰|보상|만료|종료|마감|기간|서버\s*이전|신청\s*시작|재적용|적용\s*일정/i;
+  const events = [];
+  lines.forEach((line, index) => {
+    if (!dateTopics.test(line)) return;
+    const dates = parseExplicitDates(line, item.date);
+    if (!dates.length) return;
+    const range = dates.length > 1 && /~|～|부터|기간/.test(line);
+    const type = /시즌/i.test(line) ? "season"
+      : /서버\s*이전|이전\s*신청/i.test(line) ? "server-transfer"
+        : /쿠폰|보상|만료|수령/i.test(line) ? "reward-deadline"
+          : /정책|적용\s*일정/i.test(line) ? "policy" : "event";
+    const startAt = range || /신청\s*시작|시작\s*시점|오픈|적용\s*일정/i.test(line) ? dates[0].value : "";
+    const endAt = range || /종료|마감|재적용|기한|까지/i.test(line) ? dates.at(-1).value : "";
+    const deadlineAt = /만료|마감|기한|수령\s*기간/i.test(line) ? dates.at(-1).value : "";
+    if (!startAt && !endAt && !deadlineAt) return;
+    let title = "";
+    if (/PC\s*방/i.test(line)) title = /출석/i.test(line) ? "PC방 출석 이벤트" : "PC방 접속 이벤트";
+    else if (/재적용/i.test(line)) title = "거래소 정산 한도 재적용";
+    else if (/서버\s*이전|이전\s*신청/i.test(line)) title = "무료 서버 이전 일정";
+    else if (/쿠폰/i.test(line)) title = /만료/i.test(line) ? "쿠폰 보상 만료" : "감사 쿠폰 사용 기간";
+    else if (/시즌/i.test(line)) title = "시즌 일정";
+    else if (/운영정책/i.test(line)) title = "운영정책 변경 적용";
+    else title = line.split(/[:：]/)[0].trim() || "공식 일정";
+
+    const relatedPattern = type === "server-transfer" ? /서버\s*이전|이전\s*신청|재적용|정산\s*완료/i
+      : type === "reward-deadline" ? /쿠폰|보상|만료|수령\s*캐릭터|계정당|이동\s*불가/i
+        : type === "season" ? /시즌|시즌\s*미션/i
+          : type === "policy" ? /운영정책|정책|적용/i : /이벤트|PC\s*방|접속|출석|응모/i;
+    const details = [stripExplicitDates(line).replace(/^[^:：]{1,45}[:：]\s*/, "").trim(), ...lines.filter((relatedLine) => relatedLine !== line && relatedPattern.test(relatedLine)).slice(0, 2)]
+      .filter((detail) => detail && detail.length > 2);
+    const reward = lines.find((relatedLine) => relatedPattern.test(relatedLine) && /보상|지급|경품|쿠폰/.test(relatedLine)) || "";
+    events.push({
+      id: `${item.id}-derived-${index}`,
+      gameId: item.gameId || game.id,
+      gameName: gameCatalog.find((catalogItem) => catalogItem.id === (item.gameId || game.id))?.name || game.name,
+      newsId: item.id,
+      title,
+      type,
+      startAt,
+      endAt,
+      deadlineAt,
+      conditions: [...new Set(details)].slice(0, 3),
+      reward,
+      details: line,
+      url: item.url,
+    });
+  });
+  return events.filter((event, index, all) => all.findIndex((candidate) => candidate.title === event.title
+    && candidate.startAt === event.startAt && candidate.endAt === event.endAt && candidate.deadlineAt === event.deadlineAt) === index);
+}
+
+function normalizeArticleEvent(event, item, index) {
+  const startAt = normalizeCalendarDate(event.startAt);
+  const endAt = normalizeCalendarDate(event.endAt);
+  const deadlineAt = normalizeCalendarDate(event.deadlineAt);
+  if (!startAt && !endAt && !deadlineAt) return null;
+  const type = ["event", "season", "server-transfer", "reward-deadline", "policy", "other"].includes(event.type) ? event.type : "other";
+  return {
+    id: `${item.id}-event-${index}`,
+    gameId: item.gameId || game.id,
+    gameName: gameCatalog.find((catalogItem) => catalogItem.id === (item.gameId || game.id))?.name || game.name,
+    newsId: item.id,
+    title: event.title || "공식 일정",
+    type,
+    startAt,
+    endAt,
+    deadlineAt,
+    conditions: Array.isArray(event.conditions) ? event.conditions.filter((value) => typeof value === "string" && value.trim()).slice(0, 4) : [],
+    reward: event.reward || "",
+    details: event.details || "",
+    url: item.url,
+  };
+}
+
+function dashboardCalendarEvents() {
+  const followedIds = new Set(followedGameIds());
+  return newsItems.flatMap((item) => {
+    const gameId = item.gameId || game.id;
+    if (!followedIds.has(gameId)) return [];
+    const explicit = Array.isArray(item.events) ? item.events.map((event, index) => normalizeArticleEvent(event, item, index)).filter(Boolean) : [];
+    return explicit.length ? explicit : legacyCalendarEvents(item);
+  }).sort((left, right) => {
+    const leftDate = left.deadlineAt || left.endAt || left.startAt;
+    const rightDate = right.deadlineAt || right.endAt || right.startAt;
+    return leftDate.localeCompare(rightDate);
+  });
+}
+
+function eventDateKey(value) {
+  return normalizeCalendarDate(value).slice(0, 10);
+}
+
+function localDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatEventDate(value) {
+  const normalized = normalizeCalendarDate(value);
+  if (!normalized) return "일정 날짜 미정";
+  const [, year, month, day, hour, minute] = normalized.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/);
+  return `${year}. ${Number(month)}. ${Number(day)}.${hour ? ` ${hour}:${minute}` : ""}`;
+}
+
+function eventOccurrences(events) {
+  return events.flatMap((event) => [
+    event.startAt ? { date: eventDateKey(event.startAt), label: "시작", event, kind: "start" } : null,
+    event.endAt ? { date: eventDateKey(event.endAt), label: "종료", event, kind: "end" } : null,
+    event.deadlineAt ? { date: eventDateKey(event.deadlineAt), label: "마감", event, kind: "deadline" } : null,
+  ].filter(Boolean));
+}
+
+function renderCalendarEventLink(occurrence) {
+  return `<a class="calendar-marker ${escapeHTML(occurrence.kind)}" href="#/aion2/news/${encodeURIComponent(occurrence.event.newsId)}" title="${escapeHTML(`${occurrence.label} · ${occurrence.event.title}`)}"><span>${escapeHTML(occurrence.label)}</span>${escapeHTML(occurrence.event.title)}</a>`;
+}
+
+function renderUpcomingCalendarEvent(event) {
+  const targetDate = event.deadlineAt || event.endAt || event.startAt;
+  const conditions = event.conditions.length
+    ? `<ul>${event.conditions.map((condition) => `<li>${escapeHTML(condition)}</li>`).join("")}</ul>`
+    : `<p>${escapeHTML(event.details || "공식 게시물에서 일정이 확인되었습니다.")}</p>`;
+  return `<article class="calendar-upcoming-item"><div class="calendar-upcoming-date"><strong>${escapeHTML(formatEventDate(targetDate))}</strong><span>${escapeHTML({ event: "이벤트", season: "시즌", "server-transfer": "서버 이전", "reward-deadline": "보상 마감", policy: "정책 적용", other: "일정" }[event.type] || "일정")}</span></div><div class="calendar-upcoming-copy"><a href="#/aion2/news/${encodeURIComponent(event.newsId)}"><strong>${escapeHTML(event.title)}</strong></a>${conditions}${event.reward ? `<small>보상 · ${escapeHTML(event.reward)}</small>` : ""}</div></article>`;
+}
+
+function renderDashboardCalendar(events) {
+  const today = new Date();
+  const month = new Date(today.getFullYear(), today.getMonth() + state.calendarOffset, 1);
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const startOffset = (month.getDay() + 6) % 7;
+  const occurrences = eventOccurrences(events);
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(year, monthIndex, 1 - startOffset + index);
+    const key = localDateKey(date);
+    const isCurrentMonth = date.getMonth() === monthIndex;
+    const matching = occurrences.filter((occurrence) => occurrence.date === key);
+    return `<div class="calendar-day ${isCurrentMonth ? "" : "outside-month"} ${key === localDateKey(today) ? "today" : ""}"><span class="calendar-day-number">${date.getDate()}</span><div class="calendar-day-events">${matching.slice(0, 2).map(renderCalendarEventLink).join("")}${matching.length > 2 ? `<small class="calendar-more-events">+${matching.length - 2}개</small>` : ""}</div></div>`;
+  }).join("");
+  const todayKey = localDateKey(today);
+  const upcoming = events.map((event) => {
+    const candidates = [event.deadlineAt, event.endAt, event.startAt].filter(Boolean).sort();
+    const nextDate = candidates.find((value) => eventDateKey(value) >= todayKey);
+    return nextDate ? { ...event, displayDate: nextDate } : null;
+  }).filter(Boolean).sort((left, right) => left.displayDate.localeCompare(right.displayDate)).slice(0, 6);
+  const monthLabel = `${year}년 ${monthIndex + 1}월`;
+  return `
+    <section class="dashboard-section dashboard-calendar" aria-labelledby="dashboard-calendar-title">
+      <div class="dashboard-section-heading calendar-section-heading"><div><span class="page-eyebrow">EVENT CALENDAR</span><h2 id="dashboard-calendar-title">팔로우한 게임 일정</h2><p>크롤링한 공식 게시물에서 기간·종료일·보상 조건을 자동으로 모았습니다.</p></div></div>
+      <div class="calendar-layout">
+        <div class="calendar-month-view">
+          <div class="calendar-month-heading"><button class="calendar-nav-button" type="button" data-action="calendar-previous" aria-label="이전 달">‹</button><strong>${monthLabel}</strong><button class="calendar-nav-button" type="button" data-action="calendar-next" aria-label="다음 달">›</button></div>
+          <div class="calendar-weekdays" aria-hidden="true">${["월", "화", "수", "목", "금", "토", "일"].map((day) => `<span>${day}</span>`).join("")}</div>
+          <div class="calendar-grid" aria-label="${monthLabel} 달력">${cells}</div>
+          <div class="calendar-legend"><span><i class="start"></i>시작</span><span><i class="end"></i>종료·마감</span></div>
+        </div>
+        <aside class="calendar-upcoming"><h3>다가오는 일정</h3>${upcoming.length ? `<div class="calendar-upcoming-list">${upcoming.map(renderUpcomingCalendarEvent).join("")}</div>` : `<div class="calendar-empty"><strong>표시할 일정이 없습니다.</strong><p>팔로우한 게임의 새 공지를 크롤링하면 날짜가 명시된 이벤트와 시즌 일정이 여기에 추가됩니다.</p></div>`}</aside>
+      </div>
+    </section>`;
+}
+
 function renderUserPost(post) {
   const createdAt = post.createdAt ? formatDisplayDate(post.createdAt) : "날짜 정보 없음";
   return `<article class="user-post-card"><details><summary><span class="user-post-title">${escapeHTML(post.title)}</span><span class="user-post-date">${escapeHTML(createdAt)}</span></summary><p>${escapeHTML(post.body)}</p></details><button class="post-delete-button" type="button" data-action="delete-user-post" data-id="${escapeHTML(post.id)}">삭제</button></article>`;
@@ -464,6 +703,7 @@ function renderDashboardPage() {
   const followed = gameCatalog.filter((item) => isGameFollowed(item.id));
   const bookmarks = newsItems.filter((item) => isSaved(item.id));
   const posts = userPosts();
+  const calendarEvents = dashboardCalendarEvents();
   return `
     <main class="page-width game-page dashboard-page">
       <div class="page-heading dashboard-heading"><div><span class="page-eyebrow">MY TODAYPATCH</span><h1>내 대시보드</h1><p>팔로우한 게임과 저장한 소식, 내가 작성한 글을 관리하세요.</p></div></div>
@@ -482,6 +722,7 @@ function renderDashboardPage() {
           ${bookmarks.length ? `<div class="news-list dashboard-news-list">${bookmarks.slice(0, 4).map(renderNewsCard).join("")}</div>` : `<div class="dashboard-empty"><p>저장한 게시물이 없습니다.</p><a href="#/aion2/news">전체 소식 보기 <span aria-hidden="true">→</span></a></div>`}
         </section>
       </div>
+      ${renderDashboardCalendar(calendarEvents)}
       <section class="dashboard-section dashboard-posts" aria-labelledby="dashboard-posts-title">
         <div class="dashboard-section-heading"><div><span class="page-eyebrow">MY POSTS</span><h2 id="dashboard-posts-title">내가 작성한 글</h2><p>이 브라우저에 저장되어 나에게만 보이는 글입니다.</p></div><button class="primary-button" type="button" data-action="toggle-post-form" aria-expanded="false">글 작성하기</button></div>
         <form id="user-post-form" class="post-composer" hidden>
@@ -576,10 +817,106 @@ function renderModal() {
   return `<dialog class="app-dialog" id="app-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog><dialog class="app-dialog tutorial-dialog" id="tutorial-dialog" aria-labelledby="tutorial-title"></dialog><div class="toast" id="toast" role="status" aria-live="polite"></div>`;
 }
 
+function normalizeChatText(value) {
+  return String(value || "").toLocaleLowerCase("ko-KR").replace(/[^a-z0-9가-힣]/g, "");
+}
+
+function chatKnowledgeLines(item) {
+  const sections = (Array.isArray(item.sections) ? item.sections : []).flatMap((section) => [
+    { text: section.summary, weight: 2 },
+    ...(Array.isArray(section.importantDetails) ? section.importantDetails.map((text) => ({ text, weight: 4 })) : []),
+  ]);
+  const events = (Array.isArray(item.events) ? item.events : []).flatMap((event) => [
+    { text: [event.title, event.startAt && `시작 ${event.startAt}`, event.endAt && `종료 ${event.endAt}`, event.deadlineAt && `마감 ${event.deadlineAt}`].filter(Boolean).join(" · "), weight: 6 },
+    ...(Array.isArray(event.conditions) ? event.conditions.map((text) => ({ text, weight: 5 })) : []),
+    ...(event.reward ? [{ text: `보상 ${event.reward}`, weight: 5 }] : []),
+    ...(event.details ? [{ text: event.details, weight: 3 }] : []),
+  ]);
+  return [
+    { text: item.title, weight: 5 },
+    { text: item.summary, weight: 2 },
+    { text: item.analysis, weight: 1 },
+    ...(Array.isArray(item.keyPoints) ? item.keyPoints.map((text) => ({ text, weight: 4 })) : []),
+    ...sections,
+    ...events,
+  ].filter((line) => typeof line.text === "string" && line.text.trim());
+}
+
+function answerNoticeQuestion(question) {
+  const stopWords = new Set(["알려줘", "알려주세요", "해주세요", "해줘", "있어", "있나요", "어떻게", "무엇", "뭐야", "인가요", "대한", "관련", "좀", "수", "있는", "하나요", "할까"]);
+  const tokens = [...new Set((String(question).toLocaleLowerCase("ko-KR").match(/[a-z0-9]+|[가-힣]{2,}/g) || [])
+    .map((token) => token.replace(/(에서|으로|까지|부터|한테|에게|은|는|이|가|을|를|의|에|도|만)$/u, ""))
+    .filter((token) => token.length >= 2 && !stopWords.has(token)))];
+  const synonymMap = {
+    "언제까지": ["사용 기간", "만료", "종료", "마감", "기한"],
+    "언제": ["시작", "종료", "기간", "일시", "일정"],
+    "기한": ["만료", "마감", "종료", "사용 기간"],
+    "쿠폰": ["쿠폰", "등록", "코드", "보상"],
+    "보상": ["보상", "지급", "수령", "쿠폰"],
+    "서버이전": ["서버 이전", "무료 서버 이전", "신청"],
+    "이전": ["서버 이전", "재적용"],
+    "이벤트": ["이벤트", "접속", "출석", "기간"],
+    "조건": ["조건", "대상", "계정당", "참여", "접속"],
+    "직업": ["검성", "수호성", "살성", "권성", "호법성", "궁성", "치유성", "스킬"],
+    "스킬": ["스킬", "PVE", "피해량"],
+    "시즌": ["시즌", "미션", "종료"],
+    "끝": ["종료", "마감", "만료"],
+  };
+  const terms = [...new Set([...tokens, ...tokens.flatMap((token) => synonymMap[token] || [])].map(normalizeChatText).filter((term) => term.length >= 2))];
+  if (!terms.length) return { role: "assistant", text: "궁금한 공지 주제를 조금 더 구체적으로 적어 주세요. 예: ‘쿠폰은 언제까지 쓸 수 있어?’ 또는 ‘PC방 이벤트 참여 조건이 뭐야?’", facts: [], sources: [] };
+
+  const ranked = newsItems.map((item) => {
+    const lines = chatKnowledgeLines(item).map((line) => {
+      const normalized = normalizeChatText(line.text);
+      const hits = terms.filter((term) => normalized.includes(term)).length;
+      return { ...line, score: hits * line.weight };
+    });
+    return { item, lines, score: lines.reduce((total, line) => total + line.score, 0) };
+  }).filter((result) => result.score > 0).sort((left, right) => right.score - left.score);
+
+  if (!ranked.length) return {
+    role: "assistant",
+    text: "현재 크롤링된 공지·업데이트·CM 이야기에서는 답을 찾지 못했어요. 게임 이름이나 보상·직업·기간처럼 핵심 단어를 넣어 다시 질문해 주세요.",
+    facts: [],
+    sources: [],
+  };
+
+  const best = ranked[0];
+  const facts = best.lines.filter((line) => line.score > 0).sort((left, right) => right.score - left.score).slice(0, 4).map((line) => line.text);
+  if (!facts.length && best.item.summary) facts.push(best.item.summary);
+  return {
+    role: "assistant",
+    text: "수집된 게시물의 요약과 중요 정보에서 관련 내용을 찾았어요. 아래 날짜와 조건은 원문 링크에서도 확인할 수 있습니다.",
+    facts,
+    sources: ranked.slice(0, 2).map(({ item }) => ({ id: item.id, title: item.title })),
+  };
+}
+
+function renderChatMessage(message) {
+  if (message.role === "user") return `<article class="chat-message user"><div class="chat-bubble"><p>${escapeHTML(message.text)}</p></div></article>`;
+  const facts = Array.isArray(message.facts) && message.facts.length ? `<ul>${message.facts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join("")}</ul>` : "";
+  const sources = Array.isArray(message.sources) && message.sources.length ? `<div class="chat-sources">${message.sources.map((source) => `<a href="#/aion2/news/${encodeURIComponent(source.id)}">공지 보기 · ${escapeHTML(source.title)} <span aria-hidden="true">↗</span></a>`).join("")}</div>` : "";
+  return `<article class="chat-message assistant"><span class="chat-avatar" aria-hidden="true">T</span><div class="chat-bubble"><p>${escapeHTML(message.text)}</p>${facts}${sources}</div></article>`;
+}
+
+function renderChatbot() {
+  const conversation = state.chatMessages.length
+    ? state.chatMessages.map(renderChatMessage).join("")
+    : `<article class="chat-message assistant"><span class="chat-avatar" aria-hidden="true">T</span><div class="chat-bubble"><p>안녕하세요! 크롤링된 공지·업데이트·CM 이야기에서 날짜, 보상, 직업 변경 등을 찾아드릴게요.</p><small>예: “쿠폰은 언제까지 쓸 수 있어?”</small></div></article>`;
+  return `<div class="chatbot-dock">
+    <section class="chatbot-panel" aria-label="공지 질문 챗봇" ${state.chatOpen ? "" : "hidden"}>
+      <div class="chatbot-heading"><div><strong>공지 질문하기</strong><small>수집된 게시물에서 근거를 찾아요</small></div><div><button type="button" data-action="clear-chat" aria-label="대화 지우기" title="대화 지우기">↻</button><button type="button" data-action="close-chatbot" aria-label="챗봇 닫기" title="닫기">×</button></div></div>
+      <div class="chatbot-messages" id="chatbot-messages" role="log" aria-live="polite">${conversation}</div>
+      <form class="chatbot-form" id="chatbot-form"><label class="sr-only" for="chatbot-question">공지에 대해 질문하기</label><input id="chatbot-question" name="question" type="text" maxlength="300" placeholder="공지에 대해 질문해 보세요" autocomplete="off" required /><button type="submit" aria-label="질문 보내기">↑</button></form>
+    </section>
+    <button class="chatbot-launcher ${state.chatOpen ? "open" : ""}" type="button" data-action="toggle-chatbot" aria-expanded="${state.chatOpen}" aria-label="${state.chatOpen ? "공지 질문 챗봇 닫기" : "공지 질문 챗봇 열기"}">${state.chatOpen ? "×" : "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5h-6l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5v-8Z\"/><path d=\"M8 8h8M8 11h5\"/></svg><span>질문</span>"}</button>
+  </div>`;
+}
+
 const tutorialSteps = [
   { title: "게임을 찾아 팔로우하세요", body: "검색창에서 게임을 찾거나 오른쪽 게임 둘러보기에서 아이콘을 선택하세요. 아이콘을 누르면 게임 페이지로 이동하고, 둘러보기 목록은 우클릭하거나 길게 눌러 팔로우할 수 있어요.", tip: "내 게임 아이콘을 우클릭하거나 길게 누르면 팔로우를 해제할 수 있습니다." },
   { title: "새 소식을 확인하세요", body: "아이온2 페이지의 공지, 업데이트, CM 이야기에서 최신 글을 확인할 수 있어요. 게시글을 열면 AI 요약과 항목별 분석, 공식 원문 링크가 표시됩니다.", tip: "읽은 글은 목록에서 읽음 표시로 구분됩니다." },
-  { title: "북마크와 게임을 관리하세요", body: "게시글은 북마크로 저장하고, 대시보드에서 팔로우한 게임과 저장한 글을 관리하세요. 팔로우한 게임에 새 글이 올라오면 알림 메뉴에서 확인할 수 있어요.", tip: "이용 방법은 메인 화면의 ‘튜토리얼 보기’에서 다시 열 수 있습니다." },
+  { title: "북마크와 게임을 관리하세요", body: "게시글은 북마크로 저장하고, 대시보드에서 팔로우한 게임과 저장한 글을 관리하세요. 팔로우한 게임에 새 글이 올라오면 알림 메뉴에서 확인할 수 있어요.", tip: "대시보드에서 팔로우한 게임의 이벤트와 보상 마감 일정도 확인할 수 있습니다." },
 ];
 
 function renderTutorialStep() {
@@ -673,6 +1010,7 @@ function drawGameResults() {
 
 function render() {
   syncFollowedNewsNotifications();
+  syncCalendarNotifications();
   const kind = routeKind();
   if (kind === "detail") markNewsAsRead(detailId());
   let page;
@@ -684,7 +1022,7 @@ function render() {
   else if (kind === "dashboard") page = renderDashboardPage();
   else if (kind === "detail") page = renderDetail(detailId());
   else page = renderHome();
-  app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}`;
+  app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}${renderChatbot()}`;
   drawNewsList();
   drawGameResults();
   maybeOpenTutorial();
@@ -848,6 +1186,28 @@ app.addEventListener("click", (event) => {
     }
   }
   if (action === "tutorial-close") app.querySelector("#tutorial-dialog")?.close();
+  if (action === "calendar-previous") {
+    state.calendarOffset -= 1;
+    render();
+  }
+  if (action === "calendar-next") {
+    state.calendarOffset += 1;
+    render();
+  }
+  if (action === "toggle-chatbot") {
+    state.chatOpen = !state.chatOpen;
+    render();
+    if (state.chatOpen) app.querySelector("#chatbot-question")?.focus();
+  }
+  if (action === "close-chatbot") {
+    state.chatOpen = false;
+    render();
+  }
+  if (action === "clear-chat") {
+    state.chatMessages = [];
+    render();
+    app.querySelector("#chatbot-question")?.focus();
+  }
   if (action === "toggle-post-form") {
     const form = app.querySelector("#user-post-form");
     const opening = form.hidden;
@@ -938,6 +1298,21 @@ app.addEventListener("contextmenu", (event) => {
 window.addEventListener("resize", closeFollowContextMenu);
 
 app.addEventListener("submit", (event) => {
+  if (event.target.id === "chatbot-form") {
+    event.preventDefault();
+    const question = String(new FormData(event.target).get("question") || "").trim();
+    if (!question) return;
+    state.chatMessages.push({ role: "user", text: question }, answerNoticeQuestion(question));
+    state.chatMessages = state.chatMessages.slice(-40);
+    state.chatOpen = true;
+    render();
+    requestAnimationFrame(() => {
+      const messages = app.querySelector("#chatbot-messages");
+      if (messages) messages.scrollTop = messages.scrollHeight;
+      app.querySelector("#chatbot-question")?.focus();
+    });
+    return;
+  }
   if (event.target.id === "user-post-form") {
     event.preventDefault();
     const formData = new FormData(event.target);
