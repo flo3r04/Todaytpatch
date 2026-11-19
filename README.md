@@ -20,13 +20,26 @@ node server.js
 
 ### 아이온2 공식 게시판 크롤링
 
-Node.js 18 이상, 인터넷 연결, OpenAI API 키가 필요합니다. API 키를 프로젝트 파일이나 채팅에 저장하지 말고, 터미널의 환경 변수 `OPENAI_API_KEY`로 설정한 뒤 프로젝트 폴더에서 `npm run crawl`을 실행하세요. 기본 기준일은 한국 시간 2026년 11월 18일이며, 세 공식 게시판에서 그 날짜 이후의 게시물을 수집해 OpenAI가 요약·분석한 결과를 `data/aion2.js`에 기록합니다. 기준일은 `AION2_CRAWL_SINCE=YYYY-MM-DD` 환경 변수로 바꿀 수 있습니다.
+Node.js 18 이상과 인터넷 연결이 필요합니다. 기본 AI 제공자는 OpenAI이며, API 키를 프로젝트 파일이나 채팅에 저장하지 말고 환경 변수로 설정한 뒤 프로젝트 폴더에서 `npm run crawl`을 실행하세요. 기본 기준일은 한국 시간 2026년 11월 18일이며, 세 공식 게시판에서 그 날짜 이후의 게시물을 수집해 AI가 요약·분석한 결과를 `data/aion2.js`에 기록합니다. 기준일은 `AION2_CRAWL_SINCE=YYYY-MM-DD` 환경 변수로 바꿀 수 있습니다.
+
+#### OpenRouter 임시 사용
+
+[OpenRouter API 키](https://openrouter.ai/settings/keys)를 만든 뒤 Windows 사용자 환경 변수 `OPENROUTER_API_KEY`에 저장합니다. PowerShell에서 아래 명령을 실행하면 이 터미널에서만 Gemma 4 31B 무료 모델로 크롤링합니다.
+
+```powershell
+cd C:\Users\user\Desktop\Todaypatch
+$env:AI_PROVIDER = "openrouter"
+$env:OPENROUTER_MODEL = "google/gemma-4-31b-it:free"
+npm run crawl
+```
+
+`AI_PROVIDER`와 `OPENROUTER_MODEL`은 현재 PowerShell 창에만 적용됩니다. 새 PowerShell 창에서는 기본 OpenAI 설정으로 돌아갑니다. OpenRouter 키는 `OPENAI_API_KEY`와 다른 키이므로 `OPENROUTER_API_KEY`로 등록해야 합니다. OpenRouter 연결은 Chat Completions JSON 모드를 사용합니다. 이 모델은 JSON 형식은 지원하지만 JSON Schema를 강제하지 않으므로, 크롤러가 결과를 검사한 뒤에만 데이터를 갱신합니다.
 
 - [공지](https://aion2.plaync.com/ko-kr/board/notice/list)
 - [업데이트](https://aion2.plaync.com/ko-kr/board/update/list)
 - [CM 이야기](https://aion2.plaync.com/ko-kr/board/cm_story/list)
 
-상세 화면과 검색은 AI 요약·분석을 사용하고, 공식 본문은 출처 링크로 연결합니다. 원문 본문 자체는 사이트 데이터에 저장하지 않습니다. API 키 누락, 크롤링 실패, 요약 오류가 발생하면 기존 데이터는 유지됩니다. 요약 요청은 OpenAI Responses API를 사용하며 응답 저장은 비활성화합니다.
+상세 화면과 검색은 AI 요약·분석을 사용하고, 공식 본문은 출처 링크로 연결합니다. 원문 본문 자체는 사이트 데이터에 저장하지 않습니다. API 키 누락, 크롤링 실패, 요약 오류가 발생하면 기존 데이터는 유지됩니다. OpenAI 선택 시 Responses API를 사용하고 응답 저장을 비활성화합니다. OpenRouter 선택 시 OpenRouter의 Chat Completions API를 사용합니다.
 
 ## 화면과 동작
 
