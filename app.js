@@ -9,7 +9,11 @@ const taskItems = [
 
 const categories = ["전체", "공지", "업데이트", "CM 이야기"];
 const game = { id: "aion2", name: "아이온2", aliases: "aion2 아이온2", icon: "./assets/aion2-logo.png", route: "#/aion2" };
-const gameCatalog = [game];
+const gameCatalog = [
+  game,
+  { id: "dokkaebi-world", name: "도깨비의 세계", icon: "./assets/dokkaebi-world.png", route: "#/game/dokkaebi-world" },
+  { id: "temppal", name: "템빨", icon: "./assets/temppal.png", route: "#/game/temppal", upcoming: true },
+];
 const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false };
 const app = document.querySelector("#app");
 
@@ -168,6 +172,7 @@ function routeKind(route = currentRoute()) {
   const parts = routeParts(route);
   if (!parts.length) return "home";
   if (parts[0] === "dashboard") return "dashboard";
+  if (parts[0] === "game" && gameCatalog.some((item) => item.id === parts[1])) return "game-hub";
   if (parts[0] === "aion2") {
     if (parts[1] === "news" && parts[2]) return "detail";
     if (["news", "notices", "updates", "cm-stories", "tasks", "bookmarks"].includes(parts[1])) return parts[1];
@@ -216,7 +221,8 @@ function renderNotificationControl() {
 
 function renderHeader() {
   const kind = routeKind();
-  const inGame = kind !== "home" && kind !== "dashboard";
+  const inGame = !["home", "dashboard", "game-hub"].includes(kind);
+  const selectedGame = kind === "game-hub" ? gameCatalog.find((item) => item.id === routeParts()[1]) : null;
   const isDark = document.documentElement.dataset.theme === "dark";
   const themeLabel = isDark ? "라이트 모드" : "다크 모드";
   const themeIcon = isDark
@@ -245,7 +251,7 @@ function renderHeader() {
           <button class="mobile-menu-button" data-action="mobile-menu" aria-label="게임 메뉴 열기" aria-expanded="false">☰</button>
           <nav class="main-nav" id="main-nav" aria-label="아이온2 메뉴">
             ${links.map(([label, href, route]) => `<a class="nav-link ${kind === route || (kind === "detail" && route === activeDetailRoute) ? "active" : ""}" href="${href}" ${kind === route || (kind === "detail" && route === activeDetailRoute) ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
-          </nav>` : `<span class="header-caption">게임별 소식을 한곳에서</span>`}
+          </nav>` : `<span class="header-caption">${escapeHTML(selectedGame?.name || "게임별 소식을 한곳에서")}</span>`}
         <div class="header-controls ${inGame ? "in-game" : ""}">
           <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
           ${renderNotificationControl()}
@@ -296,10 +302,22 @@ function renderHome() {
 
 function renderFollowedGames() {
   const followedGames = gameCatalog.filter((item) => isGameFollowed(item.id));
+  const otherGames = gameCatalog.filter((item) => !item.upcoming && !isGameFollowed(item.id));
+  const upcomingGames = gameCatalog.filter((item) => item.upcoming && !isGameFollowed(item.id));
   return `
     <section class="home-following" aria-labelledby="home-following-title">
-      <div class="home-following-heading"><div><span class="home-guide-eyebrow">YOUR GAMES</span><h2 id="home-following-title">팔로우한 게임</h2></div><p>아이콘을 눌러 입장하고, 우클릭(모바일은 길게 누르기)해 팔로우를 해제하세요.</p></div>
-      ${followedGames.length ? `<div class="followed-game-grid" aria-label="팔로우한 게임 목록">${followedGames.map((item) => `<a class="followed-game-tile" href="${escapeHTML(item.route)}" data-followed-game="true" data-game-id="${escapeHTML(item.id)}" title="${escapeHTML(item.name)} 열기 · 우클릭하여 팔로우 해제"><span class="followed-game-icon"><img src="${escapeHTML(item.icon)}" alt="" /></span><span class="followed-game-name">${escapeHTML(item.name)}</span></a>`).join("")}</div>` : `<div class="following-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />검색 결과에서 팔로우를 눌러 관심 게임을 추가하세요.</p></div>`}
+      <div class="home-following-heading"><div><span class="home-guide-eyebrow">YOUR GAMES</span><h2 id="home-following-title">팔로우한 게임</h2></div></div>
+      <div class="home-following-layout">
+        <section class="home-game-panel followed-panel" aria-label="내가 팔로우한 게임">
+          <div class="home-game-panel-heading"><h3>내 게임</h3><span>${followedGames.length}개</span></div>
+          ${followedGames.length ? `<div class="followed-game-grid">${followedGames.map((item) => renderGameTile(item, "remove")).join("")}</div>` : `<div class="following-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />오른쪽 게임 목록에서 추가해 보세요.</p></div>`}
+        </section>
+        <section class="home-game-panel discover-panel" aria-label="팔로우할 게임과 출시 예정 게임">
+          <div class="home-game-panel-heading"><h3>게임 둘러보기</h3></div>
+          ${renderGameDiscoveryGroup("다른 게임", otherGames, "팔로우할 게임이 없습니다.")}
+          ${renderGameDiscoveryGroup("곧 출시하는 게임", upcomingGames, "현재 출시 예정 게임이 없습니다.")}
+        </section>
+      </div>
     </section>`;
 }
 
@@ -307,14 +325,27 @@ function closeFollowContextMenu() {
   app.querySelector(".follow-context-menu")?.remove();
 }
 
-function openFollowContextMenu(gameId, x, y, tileBounds) {
-  const followedGame = gameCatalog.find((item) => item.id === gameId && isGameFollowed(item.id));
-  if (!followedGame) return;
+function renderGameTile(item, menuMode) {
+  const status = item.upcoming ? '<small class="discovery-game-status">출시 예정</small>' : "";
+  const actionHint = menuMode === "add" ? "우클릭하여 팔로우" : "우클릭하여 팔로우 해제";
+  return `<a class="followed-game-tile ${menuMode === "add" ? "discovery-game-tile" : ""}" href="${escapeHTML(item.route)}" data-game-menu="${menuMode}" data-game-id="${escapeHTML(item.id)}" title="${escapeHTML(item.name)} 열기 · ${actionHint}"><span class="followed-game-icon"><img src="${escapeHTML(item.icon)}" alt="" /></span><span class="followed-game-name">${escapeHTML(item.name)}</span>${status}</a>`;
+}
+
+function renderGameDiscoveryGroup(title, items, emptyMessage) {
+  return `<section class="game-discovery-group"><h4>${escapeHTML(title)}</h4>${items.length ? `<div class="game-discovery-list">${items.map((item) => renderGameTile(item, "add")).join("")}</div>` : `<p class="game-discovery-empty">${escapeHTML(emptyMessage)}</p>`}</section>`;
+}
+
+function openGameContextMenu(gameId, mode, x, y, tileBounds) {
+  const targetGame = gameCatalog.find((item) => item.id === gameId);
+  const followed = isGameFollowed(gameId);
+  if (!targetGame || (mode === "remove" && !followed) || (mode === "add" && followed)) return;
   closeFollowContextMenu();
   const menu = document.createElement("div");
   menu.className = "follow-context-menu";
   menu.setAttribute("role", "menu");
-  menu.innerHTML = `<strong>${escapeHTML(followedGame.name)}</strong><button type="button" role="menuitem" data-action="toggle-follow" data-game-id="${escapeHTML(followedGame.id)}">팔로우 해제</button>`;
+  const action = mode === "add" ? "follow-game" : "toggle-follow";
+  const label = mode === "add" ? "팔로우" : "팔로우 해제";
+  menu.innerHTML = `<strong>${escapeHTML(targetGame.name)}</strong><button type="button" role="menuitem" data-action="${action}" data-game-id="${escapeHTML(targetGame.id)}">${label}</button>`;
   app.append(menu);
   const menuRect = menu.getBoundingClientRect();
   const left = Math.min(Math.max(8, x), window.innerWidth - menuRect.width - 8);
@@ -361,6 +392,19 @@ function renderGameHome() {
         <div class="section-heading"><div><h2>최근 정보</h2><p>공식 게시판에서 수집한 최신 글과 본문 링크</p></div><a class="section-link" href="#/aion2/news">전체 소식 <span aria-hidden="true">→</span></a></div>
         ${preview.length ? `<div class="news-list">${preview.map(renderNewsCard).join("")}</div>` : `<div class="empty-state"><strong>수집된 게시물이 없습니다.</strong><p>npm run crawl을 실행해 공식 게시판을 수집해 주세요.</p></div>`}
       </section>
+    </main>`;
+}
+
+function renderCatalogGamePage() {
+  const item = gameCatalog.find((entry) => entry.id === routeParts()[1]);
+  if (!item) return `<main class="page-width not-found"><h1>게임을 찾을 수 없어요.</h1><a class="primary-button" href="#/">게임 찾기로 돌아가기</a></main>`;
+  const followed = isGameFollowed(item.id);
+  return `
+    <main class="page-width game-page game-hub-page">
+      <div class="breadcrumb"><a href="#/">게임 찾기</a><span aria-hidden="true">›</span><span>${escapeHTML(item.name)}</span></div>
+      <div class="page-heading"><div><span class="page-eyebrow">${item.upcoming ? "UPCOMING GAME" : "GAME HUB"}</span><h1>${escapeHTML(item.name)}</h1><p>${item.upcoming ? "출시를 기다리는 게임입니다. 팔로우하면 관심 게임 목록에서 모아볼 수 있어요." : "게임 소식을 모아볼 수 있도록 팔로우할 수 있습니다."}</p></div></div>
+      <section class="game-hub-card"><img src="${escapeHTML(item.icon)}" alt="" /><div><strong>${escapeHTML(item.name)}</strong><p>${item.upcoming ? "출시 예정" : "게임 소식 연동 준비 중"}</p></div><button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="${followed ? "toggle-follow" : "follow-game"}" data-game-id="${escapeHTML(item.id)}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button></section>
+      <div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>현재 공지·업데이트 크롤링은 아이온2에 연결되어 있습니다. 다른 게임의 소식 데이터는 준비 중입니다.</p></div>
     </main>`;
 }
 
@@ -412,9 +456,9 @@ function renderBookmarksPage() {
     </main>`;
 }
 
-function renderDashboardFollowedGame() {
-  const latestPatchDate = gameData.lastPatchDate || "아직 수집 전";
-  return `<article class="dashboard-game-item"><a class="dashboard-game-link" href="#/aion2"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span><strong>${escapeHTML(game.name)}</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a><button class="game-follow-button following" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-label="${escapeHTML(game.name)} 팔로우 해제" aria-pressed="true">팔로우 해제</button></article>`;
+function renderDashboardFollowedGame(item) {
+  const status = item.id === game.id ? `최근 패치 · ${gameData.lastPatchDate || "아직 수집 전"}` : item.upcoming ? "출시 예정" : "소식 연동 준비 중";
+  return `<article class="dashboard-game-item"><a class="dashboard-game-link" href="${escapeHTML(item.route)}"><span class="game-result-mark" aria-hidden="true"><img src="${escapeHTML(item.icon)}" alt="" /></span><span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(status)}</small></span></a><button class="game-follow-button following" type="button" data-action="toggle-follow" data-game-id="${escapeHTML(item.id)}" aria-label="${escapeHTML(item.name)} 팔로우 해제" aria-pressed="true">팔로우 해제</button></article>`;
 }
 
 function renderUserPost(post) {
@@ -423,21 +467,21 @@ function renderUserPost(post) {
 }
 
 function renderDashboardPage() {
-  const followed = followedGameIds().includes(game.id);
+  const followed = gameCatalog.filter((item) => isGameFollowed(item.id));
   const bookmarks = newsItems.filter((item) => isSaved(item.id));
   const posts = userPosts();
   return `
     <main class="page-width game-page dashboard-page">
       <div class="page-heading dashboard-heading"><div><span class="page-eyebrow">MY TODAYPATCH</span><h1>내 대시보드</h1><p>팔로우한 게임과 저장한 소식, 내가 작성한 글을 관리하세요.</p></div></div>
       <div class="dashboard-stats" aria-label="내 활동 요약">
-        <div class="dashboard-stat"><span>팔로우 게임</span><strong>${followed ? 1 : 0}</strong></div>
+        <div class="dashboard-stat"><span>팔로우 게임</span><strong>${followed.length}</strong></div>
         <div class="dashboard-stat"><span>저장한 북마크</span><strong>${bookmarks.length}</strong></div>
         <div class="dashboard-stat"><span>내 작성 글</span><strong>${posts.length}</strong></div>
       </div>
       <div class="dashboard-columns">
         <section class="dashboard-section" aria-labelledby="dashboard-games-title">
-          <div class="dashboard-section-heading"><div><span class="page-eyebrow">MY GAMES</span><h2 id="dashboard-games-title">팔로우한 게임</h2></div><span class="dashboard-count">${followed ? 1 : 0}개</span></div>
-          ${followed ? renderDashboardFollowedGame() : `<div class="dashboard-empty"><p>팔로우 중인 게임이 없습니다.</p><a href="#/">게임 찾아보기 <span aria-hidden="true">→</span></a></div>`}
+          <div class="dashboard-section-heading"><div><span class="page-eyebrow">MY GAMES</span><h2 id="dashboard-games-title">팔로우한 게임</h2></div><span class="dashboard-count">${followed.length}개</span></div>
+          ${followed.length ? `<div class="dashboard-games-list">${followed.map(renderDashboardFollowedGame).join("")}</div>` : `<div class="dashboard-empty"><p>팔로우 중인 게임이 없습니다.</p><a href="#/">게임 찾아보기 <span aria-hidden="true">→</span></a></div>`}
         </section>
         <section class="dashboard-section" aria-labelledby="dashboard-bookmarks-title">
           <div class="dashboard-section-heading"><div><span class="page-eyebrow">SAVED NEWS</span><h2 id="dashboard-bookmarks-title">북마크 관리</h2></div><a class="dashboard-more" href="#/aion2/bookmarks">전체 보기 <span aria-hidden="true">→</span></a></div>
@@ -594,6 +638,7 @@ function render() {
   if (kind === "detail") markNewsAsRead(detailId());
   let page;
   if (kind === "game-home") page = renderGameHome();
+  else if (kind === "game-hub") page = renderCatalogGamePage();
   else if (["news", "notices", "updates", "cm-stories"].includes(kind)) page = renderFeedPage(kind);
   else if (kind === "tasks") page = renderTasksPage();
   else if (kind === "bookmarks") page = renderBookmarksPage();
@@ -731,7 +776,18 @@ app.addEventListener("click", (event) => {
     writeStorage("todaypatch.followedGames", wasFollowed ? followed.filter((item) => item !== gameId) : [...followed, gameId]);
     if (!wasFollowed) rememberCurrentGameNews(gameId);
     render();
-    showToast(wasFollowed ? "팔로우를 해제했어요." : "아이온2를 팔로우했어요.");
+    const followedGame = gameCatalog.find((item) => item.id === gameId);
+    showToast(wasFollowed ? `${followedGame?.name || "게임"} 팔로우를 해제했어요.` : `${followedGame?.name || "게임"} 팔로우를 시작했어요.`);
+  }
+  if (action === "follow-game") {
+    const gameId = button.dataset.gameId;
+    const followed = followedGameIds();
+    if (followed.includes(gameId)) return;
+    writeStorage("todaypatch.followedGames", [...followed, gameId]);
+    rememberCurrentGameNews(gameId);
+    render();
+    const followedGame = gameCatalog.find((item) => item.id === gameId);
+    showToast(`${followedGame?.name || "게임"} 팔로우를 시작했어요.`);
   }
   if (action === "toggle-post-form") {
     const form = app.querySelector("#user-post-form");
@@ -796,11 +852,11 @@ app.addEventListener("keydown", (event) => {
     closeFollowContextMenu();
     return;
   }
-  if ((event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && event.target.closest("[data-followed-game]")) {
+  if ((event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && event.target.closest("[data-game-menu]")) {
     event.preventDefault();
-    const tile = event.target.closest("[data-followed-game]");
+    const tile = event.target.closest("[data-game-menu]");
     const bounds = tile.getBoundingClientRect();
-    openFollowContextMenu(tile.dataset.gameId, 0, 0, bounds);
+    openGameContextMenu(tile.dataset.gameId, tile.dataset.gameMenu, 0, 0, bounds);
     return;
   }
   if (event.target.id !== "game-search" || event.key !== "Enter") return;
@@ -809,11 +865,11 @@ app.addEventListener("keydown", (event) => {
 });
 
 app.addEventListener("contextmenu", (event) => {
-  const tile = event.target.closest("[data-followed-game]");
+  const tile = event.target.closest("[data-game-menu]");
   if (!tile) return;
   event.preventDefault();
   const bounds = tile.getBoundingClientRect();
-  openFollowContextMenu(tile.dataset.gameId, event.clientX, event.clientY, bounds);
+  openGameContextMenu(tile.dataset.gameId, tile.dataset.gameMenu, event.clientX, event.clientY, bounds);
 });
 
 window.addEventListener("resize", closeFollowContextMenu);

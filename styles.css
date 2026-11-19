@@ -120,9 +120,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .recent-search-item:hover { border-color: var(--brand); color: var(--brand); }
 .recent-search-item svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.7; }
 .home-following { width: min(100%, 760px); margin-top: 20px; text-align: left; }
-.home-following-heading { margin-bottom: 11px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.home-following-heading { margin-bottom: 11px; display: flex; align-items: flex-end; gap: 12px; }
 .home-following-heading h2 { margin: 4px 0 0; font-size: 16px; letter-spacing: -.035em; }
-.home-following-heading p { margin: 0 0 1px; color: var(--muted-light); font-size: 11px; }
+.home-following-layout { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: stretch; gap: 11px; }
+.home-game-panel { min-width: 0; min-height: 220px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.home-game-panel-heading { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.home-game-panel-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.home-game-panel-heading > span { color: var(--muted-light); font-size: 11px; }
 .followed-game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
 .followed-game-tile { min-width: 0; min-height: 96px; padding: 9px 5px 7px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 7px; border: 1px solid transparent; border-radius: 9px; text-align: center; transition: border-color 140ms ease, background 140ms ease, transform 140ms ease; }
 .followed-game-tile:hover, .followed-game-tile:focus-visible { transform: translateY(-1px); border-color: var(--line); background: var(--surface); }
@@ -133,6 +137,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .follow-context-menu > strong { padding: 8px 9px; display: block; overflow: hidden; border-bottom: 1px solid var(--line); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .follow-context-menu [role="menuitem"] { width: 100%; min-height: 36px; margin-top: 4px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: #b64f5c; font-size: 12px; text-align: left; cursor: pointer; }
 .follow-context-menu [role="menuitem"]:hover, .follow-context-menu [role="menuitem"]:focus-visible { background: #fff1f2; }
+.follow-context-menu [data-action="follow-game"] { color: var(--brand); }
+.follow-context-menu [data-action="follow-game"]:hover,
+.follow-context-menu [data-action="follow-game"]:focus-visible { background: var(--brand-soft); }
+.discover-panel { display: grid; align-content: start; gap: 10px; }
+.discover-panel .home-game-panel-heading { margin-bottom: 0; }
+.game-discovery-group h4 { margin: 0 0 7px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.game-discovery-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.discovery-game-tile { min-height: 94px; flex: 0 0 78px; }
+.discovery-game-tile .followed-game-icon { width: 48px; height: 48px; border-radius: 10px; }
+.discovery-game-status { color: var(--muted-light); font-size: 9px; line-height: 1.2; }
+.game-discovery-empty { margin: 0; padding: 8px 0; color: var(--muted-light); font-size: 11px; }
 .followed-game-card { min-height: 70px; display: flex; align-items: center; gap: 12px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .followed-game-link { min-width: 0; flex: 1; display: flex; align-items: center; gap: 12px; }
 .followed-game-card .game-result-mark { width: 42px; height: 42px; }
@@ -373,6 +388,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 :root[data-theme="dark"] .post-composer { border-color: var(--line); background: var(--page); }
 :root[data-theme="dark"] .follow-context-menu [role="menuitem"]:hover,
 :root[data-theme="dark"] .follow-context-menu [role="menuitem"]:focus-visible { background: #30232c; }
+:root[data-theme="dark"] .follow-context-menu [data-action="follow-game"]:hover,
+:root[data-theme="dark"] .follow-context-menu [data-action="follow-game"]:focus-visible { background: var(--brand-soft); }
+:root[data-theme="dark"] .following-empty { background: var(--page); }
 :root[data-theme="dark"] .post-composer input,
 :root[data-theme="dark"] .post-composer textarea,
 :root[data-theme="dark"] .post-delete-button { border-color: var(--line-strong); background: var(--surface-muted); color: var(--ink); }
@@ -393,6 +411,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dashboard-section-heading h2 { margin: 4px 0 0; font-size: 18px; letter-spacing: -.035em; }
 .dashboard-section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .dashboard-count { color: var(--muted-light); font-size: 12px; white-space: nowrap; }
+.dashboard-games-list { display: grid; gap: 8px; }
 .dashboard-game-item { min-height: 68px; padding: 9px 10px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; }
 .dashboard-game-link { min-width: 0; flex: 1; display: flex; align-items: center; gap: 10px; }
 .dashboard-game-link > span:last-child { min-width: 0; display: grid; gap: 4px; }
@@ -406,6 +425,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dashboard-news-list .news-main h3 { font-size: 15px; }
 .dashboard-news-list .news-source-link { right: 12px; bottom: 10px; font-size: 11px; }
 .dashboard-news-list .bookmark-button { top: 8px; right: 7px; }
+.game-hub-card { min-height: 98px; margin-bottom: 14px; padding: 15px; display: flex; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.game-hub-card > img { width: 58px; height: 58px; flex: 0 0 auto; border-radius: 12px; object-fit: cover; }
+.game-hub-card > div { min-width: 0; flex: 1; }
+.game-hub-card strong { font-size: 15px; }
+.game-hub-card p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
 .dashboard-posts { margin-top: 15px; }
 .dashboard-posts .dashboard-section-heading { align-items: flex-end; }
 .post-composer { margin: 0 0 15px; padding: 16px; display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
@@ -460,7 +484,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .home-search > p { margin-bottom: 21px; font-size: 12px; }
   .home-guide { margin-top: 22px; }
   .home-following { margin-top: 18px; }
-  .home-following-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .home-following-layout { grid-template-columns: 1fr; gap: 9px; }
+  .home-game-panel { min-height: 0; padding: 12px; }
+  .home-following-heading { align-items: flex-start; }
   .following-empty { align-items: flex-start; }
   .followed-game-grid { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 5px; }
   .followed-game-tile { min-height: 87px; padding-top: 7px; }
