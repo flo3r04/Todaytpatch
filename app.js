@@ -851,78 +851,232 @@ function renderModal() {
 }
 
 function normalizeChatText(value) {
-  return String(value || "").toLocaleLowerCase("ko-KR").replace(/[^a-z0-9가-힣]/g, "");
+  return String(value || "").normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[^a-z0-9가-힣]/g, "");
 }
 
 function chatKnowledgeLines(item) {
-  const sections = (Array.isArray(item.sections) ? item.sections : []).flatMap((section) => [
-    { text: section.summary, weight: 2 },
-    ...(Array.isArray(section.importantDetails) ? section.importantDetails.map((text) => ({ text, weight: 4 })) : []),
-  ]);
-  const events = (Array.isArray(item.events) ? item.events : []).flatMap((event) => [
-    { text: [event.title, event.startAt && `시작 ${event.startAt}`, event.endAt && `종료 ${event.endAt}`, event.deadlineAt && `마감 ${event.deadlineAt}`].filter(Boolean).join(" · "), weight: 6 },
-    ...(Array.isArray(event.conditions) ? event.conditions.map((text) => ({ text, weight: 5 })) : []),
-    ...(event.reward ? [{ text: `보상 ${event.reward}`, weight: 5 }] : []),
-    ...(event.details ? [{ text: event.details, weight: 3 }] : []),
-  ]);
-  return [
-    { text: item.title, weight: 5 },
-    { text: item.summary, weight: 2 },
-    { text: item.analysis, weight: 1 },
-    ...(Array.isArray(item.keyPoints) ? item.keyPoints.map((text) => ({ text, weight: 4 })) : []),
-    ...sections,
-    ...events,
-  ].filter((line) => typeof line.text === "string" && line.text.trim());
+  const lines = [
+    { text: item.title, kind: "title", weight: 1.2 },
+    { text: `${item.category || ""} ${item.source || ""}`, kind: "category", weight: .8 },
+    { text: item.summary, kind: "summary", weight: 1 },
+    { text: item.analysis, kind: "analysis", weight: .85 },
+    { text: item.excerpt, kind: "summary", weight: .65 },
+    ...(Array.isArray(item.keyPoints) ? item.keyPoints.map((text) => ({ text, key: normalizeChatText(text), kind: "detail", weight: 1.8 })) : []),
+    ...(Array.isArray(item.sections) ? item.sections.flatMap((section) => [
+      { text: `${section.heading || ""} ${section.summary || ""}`, kind: "section", weight: 1.4 },
+      ...(Array.isArray(section.importantDetails) ? section.importantDetails.map((text) => ({
+        text: `${section.heading || ""} ${text}`,
+        key: normalizeChatText(text),
+        kind: "detail",
+        weight: 2.2,
+      })) : []),
+    ]) : []),
+  ];
+
+  const extractedEvents = (Array.isArray(item.events) && item.events.length ? item.events : legacyCalendarEvents(item));
+  for (const event of extractedEvents) {
+    const kindLabel = { event: "이벤트", season: "시즌", "server-transfer": "서버 이전", "reward-deadline": "쿠폰 보상", policy: "정책", other: "일정" }[event.type] || "일정";
+    const eventDates = [event.startAt && `시작 ${event.startAt}`, event.endAt && `종료 ${event.endAt}`, event.deadlineAt && `마감 ${event.deadlineAt}`].filter(Boolean);
+    if (eventDates.length) lines.push({ text: `${event.title || ""} ${kindLabel} ${eventDates.join(" ")}`, kind: "date", weight: 2.5 });
+    for (const condition of event.conditions || []) lines.push({ text: `${event.title || ""} 조건 ${condition}`, key: normalizeChatText(condition), kind: "condition", weight: 2.3 });
+    if (event.reward) lines.push({ text: `${event.title || ""} 보상 ${event.reward}`, kind: "reward", weight: 2.3 });
+    if (event.details) lines.push({ text: `${event.title || ""} ${event.details}`, kind: "detail", weight: 1.4 });
+  }
+
+  const unique = new Map();
+  for (const line of lines) {
+    if (typeof line.text !== "string" || !line.text.trim()) continue;
+    const key = line.key || normalizeChatText(line.text);
+    const existing = unique.get(key);
+    if (!existing || line.weight > existing.weight) unique.set(key, line);
+  }
+  return [...unique.values()];
 }
 
-function answerNoticeQuestion(question) {
-  const stopWords = new Set(["알려줘", "알려주세요", "해주세요", "해줘", "있어", "있나요", "어떻게", "무엇", "뭐야", "인가요", "대한", "관련", "좀", "수", "있는", "하나요", "할까"]);
-  const tokens = [...new Set((String(question).toLocaleLowerCase("ko-KR").match(/[a-z0-9]+|[가-힣]{2,}/g) || [])
-    .map((token) => token.replace(/(에서|으로|까지|부터|한테|에게|은|는|이|가|을|를|의|에|도|만)$/u, ""))
-    .filter((token) => token.length >= 2 && !stopWords.has(token)))];
-  const synonymMap = {
-    "언제까지": ["사용 기간", "만료", "종료", "마감", "기한"],
-    "언제": ["시작", "종료", "기간", "일시", "일정"],
-    "기한": ["만료", "마감", "종료", "사용 기간"],
-    "쿠폰": ["쿠폰", "등록", "코드", "보상"],
-    "보상": ["보상", "지급", "수령", "쿠폰"],
-    "서버이전": ["서버 이전", "무료 서버 이전", "신청"],
-    "이전": ["서버 이전", "재적용"],
-    "이벤트": ["이벤트", "접속", "출석", "기간"],
-    "조건": ["조건", "대상", "계정당", "참여", "접속"],
-    "직업": ["검성", "수호성", "살성", "권성", "호법성", "궁성", "치유성", "스킬"],
-    "스킬": ["스킬", "PVE", "피해량"],
-    "시즌": ["시즌", "미션", "종료"],
-    "끝": ["종료", "마감", "만료"],
+const chatStopWords = new Set([
+  "알려줘", "알려주세요", "해주세요", "해줘", "있어", "있나요", "어떻게", "무엇", "뭐", "뭐야", "어떤", "인가요", "대한", "관련", "좀", "수", "있는", "하나요", "할까", "할수", "혹시", "그냥", "정도", "내용", "정보", "쓸", "쓰다", "되나요", "되는",
+]);
+const chatLexicon = [
+  "쿠폰코드", "서버이전", "이전신청", "사용기간", "수령조건", "신청조건", "피해량", "계정당", "쿠폰", "코드", "보상", "수령", "지급", "획득", "만료", "기한", "기간", "시작", "종료", "마감", "서버", "이전", "신청", "접수", "정산", "한도", "이벤트", "출석", "접속", "조건", "대상", "참여", "방법", "경로", "등록", "직업", "클래스", "스킬", "검성", "수호성", "살성", "권성", "호법성", "궁성", "치유성", "업데이트", "패치", "변경", "밸런스", "상향", "하향", "시즌", "미션", "일정", "아이템", "강화",
+];
+const chatKeywordMap = {
+  "쿠폰": ["쿠폰", "쿠폰코드", "등록", "코드", "만료", "사용기간"],
+  "코드": ["쿠폰", "쿠폰코드", "등록번호", "쿠폰번호"],
+  "사용": ["이용", "기간", "기한", "만료", "등록"],
+  "보상": ["보상", "지급", "수령", "획득", "아이템"],
+  "수령": ["받", "지급", "획득", "등록", "쿠폰"],
+  "받": ["받", "지급", "수령", "획득", "보상"],
+  "신청": ["신청", "접수", "이전기간", "신청시작", "신청마감"],
+  "이전": ["서버이전", "무료이전", "이전신청", "재적용", "정산한도"],
+  "서버": ["서버이전", "이전신청", "무료이전"],
+  "이벤트": ["이벤트", "접속", "출석", "참여", "기간"],
+  "조건": ["조건", "대상", "계정당", "참여", "접속", "수령", "신청", "방법"],
+  "방법": ["방법", "경로", "등록", "입력", "이용", "신청", "설정"],
+  "어디서": ["경로", "페이지", "등록", "입력", "메뉴", "이용"],
+  "참여": ["참여", "접속", "출석", "시간", "대상", "조건"],
+  "기간": ["기간", "시작", "종료", "만료", "마감", "기한"],
+  "날짜": ["날짜", "시작", "종료", "만료", "마감", "일시", "기간"],
+  "언제": ["시작", "종료", "기간", "일시", "날짜", "마감", "기한"],
+  "종료": ["종료", "끝", "마감", "만료", "기한"],
+  "직업": ["클래스", "스킬", "밸런스", "검성", "수호성", "살성", "권성", "호법성", "궁성", "치유성"],
+  "클래스": ["직업", "스킬", "밸런스", "검성", "수호성", "살성", "권성", "호법성", "궁성", "치유성"],
+  "스킬": ["스킬", "피해량", "계수", "효과", "밸런스"],
+  "버프": ["상향", "피해량", "계수", "개선", "효과"],
+  "너프": ["하향", "피해량", "계수", "조정", "효과"],
+  "바뀌": ["변경", "조정", "추가", "개선", "수정", "패치"],
+  "바뀜": ["변경", "조정", "추가", "개선", "수정", "패치"],
+  "바뀐": ["변경", "조정", "추가", "개선", "수정", "패치"],
+  "달라": ["변경", "조정", "추가", "개선", "수정"],
+  "성능": ["피해량", "계수", "스킬", "밸런스", "상향", "하향"],
+  "패치": ["업데이트", "변경", "조정", "추가", "개선", "수정"],
+  "시즌": ["시즌", "시즌미션", "종료", "보상"],
+};
+
+function extractChatTokens(value) {
+  const suffixes = /(으로부터|에서부터|한테서|에게서|으로|에서|부터|까지|한테|에게|이라면|이랑|하고|은|는|이|가|을|를|의|에|도|만|로|와|과|할|한|된|하는|했어요|했어)$/u;
+  const rawTokens = String(value || "").toLocaleLowerCase("ko-KR").match(/[a-z0-9]+|[가-힣]{2,}/g) || [];
+  const tokens = [];
+  for (const rawToken of rawTokens) {
+    const token = rawToken.replace(/(받으려면|받으면|받을수|받을|받지|받는)$/u, "받")
+      .replace(/(쓰려면|사용하려면|사용하면|쓸수|쓸)$/u, "사용")
+      .replace(/(바뀌었어|바뀌었|바뀐거|바뀜|바뀌는|달라졌어|달라졌|달라진|달라짐)$/u, "변경")
+      .replace(suffixes, "");
+    if (token.length >= 2 && !chatStopWords.has(token)) tokens.push(token);
+    for (const keyword of chatLexicon) if (token.includes(keyword)) tokens.push(keyword);
+  }
+  return [...new Set(tokens.filter((token) => token.length >= 2 && !chatStopWords.has(token)))];
+}
+
+function analyzeChatQuestion(question, previousQuestion = "") {
+  const initialTokens = extractChatTokens(question);
+  const knownTopics = /쿠폰|서버|이전|이벤트|출석|접속|피시방|pc방|직업|클래스|스킬|검성|수호성|살성|권성|호법성|궁성|치유성|시즌|정산|아이템|업데이트|패치/iu;
+  const followUp = /그럼|그거|그것|그중|그건|해당|그 내용|그 날짜|그 보상|그 조건/iu.test(question)
+    || (!knownTopics.test(question) && initialTokens.length <= 3);
+  const searchText = followUp && previousQuestion ? `${previousQuestion} ${question}` : question;
+  const normalizedQuestion = normalizeChatText(searchText);
+  const primaryTerms = extractChatTokens(searchText).map(normalizeChatText);
+  const expandedTerms = new Set();
+  const appendAliases = (aliases) => aliases.forEach((alias) => {
+    const normalized = normalizeChatText(alias);
+    if (normalized.length >= 2) expandedTerms.add(normalized);
+  });
+
+  for (const term of primaryTerms) appendAliases(chatKeywordMap[term] || []);
+  const has = (pattern) => pattern.test(normalizedQuestion);
+  const intents = {
+    date: has(/언제|날짜|기간|기한|며칠|몇시|시각|일시/),
+    deadline: has(/언제까지|끝|종료|마감|만료|기한|까지|마지막/),
+    start: has(/언제부터|시작|오픈|접수/),
+    condition: has(/조건|대상|참여|신청|수령|받|획득|방법|필요|가능/),
+    method: has(/어디|어떻게|방법|경로|등록|입력|메뉴|사용법/),
+    reward: has(/보상|아이템|쿠폰|지급|수령|받|획득/),
+    class: has(/직업|클래스|스킬|밸런스|버프|너프|상향|하향|검성|수호성|살성|권성|호법성|궁성|치유성/),
+    change: has(/바뀌|달라|변경|패치|추가|수정|조정|개선|신규|좋아졌|강화/),
+    notice: has(/공지|안내/),
+    update: has(/업데이트|패치노트/),
+    cmStory: has(/cm이야기|운영소식/),
   };
-  const terms = [...new Set([...tokens, ...tokens.flatMap((token) => synonymMap[token] || [])].map(normalizeChatText).filter((term) => term.length >= 2))];
-  if (!terms.length) return { role: "assistant", text: "궁금한 공지 주제를 조금 더 구체적으로 적어 주세요. 예: ‘쿠폰은 언제까지 쓸 수 있어?’ 또는 ‘PC방 이벤트 참여 조건이 뭐야?’", facts: [], sources: [] };
 
-  const ranked = newsItems.map((item) => {
-    const lines = chatKnowledgeLines(item).map((line) => {
-      const normalized = normalizeChatText(line.text);
-      const hits = terms.filter((term) => normalized.includes(term)).length;
-      return { ...line, score: hits * line.weight };
-    });
-    return { item, lines, score: lines.reduce((total, line) => total + line.score, 0) };
-  }).filter((result) => result.score > 0).sort((left, right) => right.score - left.score);
+  if (has(/쿠폰|쿠폰코드|코드|쿠폰번호/)) appendAliases(["쿠폰", "등록", "코드", "사용기간", "만료", "보상"]);
+  if (has(/서버이전|무료이전|이전신청|서버옮기/)) appendAliases(["서버이전", "신청", "접수", "기간", "정산", "한도", "재적용"]);
+  if (has(/이벤트|출석|접속|피시방|pc방/)) appendAliases(["이벤트", "접속", "출석", "응모", "경품", "시간", "기간", "조건"]);
+  if (intents.class) appendAliases(["직업", "클래스", "스킬", "피해량", "계수", "효과", "밸런스", "상향", "하향"]);
+  if (intents.change) appendAliases(["변경", "조정", "추가", "개선", "수정", "신규", "밸런스", "콘텐츠"]);
+  if (intents.date) appendAliases(["시작", "종료", "기간", "일시", "날짜", "마감", "기한", "만료"]);
+  if (intents.condition) appendAliases(["조건", "대상", "계정당", "접속", "참여", "신청", "수령", "방법", "필수"]);
+  if (intents.method) appendAliases(["방법", "경로", "등록", "입력", "페이지", "메뉴", "이용"]);
 
-  if (!ranked.length) return {
+  const phrases = [];
+  for (let index = 0; index < primaryTerms.length - 1; index += 1) phrases.push(`${primaryTerms[index]}${primaryTerms[index + 1]}`);
+  return { normalizedQuestion, primaryTerms: [...new Set(primaryTerms)], expandedTerms: [...expandedTerms], phrases, intents };
+}
+
+function buildChatTermWeights(query) {
+  const corpus = newsItems.map((item) => normalizeChatText(chatKnowledgeLines(item).map((line) => line.text).join(" ")));
+  const terms = [...new Set([...query.primaryTerms, ...query.expandedTerms])];
+  return new Map(terms.map((term) => {
+    const documentFrequency = corpus.reduce((count, document) => count + Number(document.includes(term)), 0);
+    const inverseDocumentFrequency = 1 + Math.log((corpus.length + 1) / (documentFrequency + 1));
+    return [term, inverseDocumentFrequency];
+  }));
+}
+
+function scoreChatEvidence(line, query, termWeights) {
+  const normalized = normalizeChatText(line.text);
+  const primaryHits = query.primaryTerms.filter((term) => term.length >= 2 && normalized.includes(term));
+  const expandedHits = query.expandedTerms.filter((term) => normalized.includes(term));
+  const primaryScore = primaryHits.reduce((total, term) => total + (termWeights.get(term) || 1) * 3.2, 0);
+  const expandedScore = Math.min(
+    expandedHits.reduce((total, term) => total + (termWeights.get(term) || 1) * .55, 0),
+    Math.max(1.5, primaryScore * .8),
+  );
+  let score = primaryScore + expandedScore;
+  if (query.phrases.some((phrase) => phrase.length >= 4 && normalized.includes(phrase))) score += 2.5;
+  if (line.kind === "title" && primaryHits.length) score += 1.2;
+
+  const hasDate = /\d{4}[-./년]\s*\d{1,2}|\d{1,2}\s*월\s*\d{1,2}|\d{1,2}:\d{2}|\d{1,2}\s*시/u.test(line.text);
+  if (query.intents.date && hasDate) score += 2.4;
+  if (query.intents.deadline && /종료|마감|만료|기한|끝|사용기간|수령기간|재적용|까지/u.test(line.text)) score += 2.2;
+  if (query.intents.start && /시작|오픈|접수|부터|기간/u.test(line.text)) score += 1.8;
+  if (query.intents.condition && /대상|계정당|조건|참여|접속|수령|신청|필수|방법|경로|정산/u.test(line.text)) score += 1.7;
+  if (query.intents.method && /방법|경로|등록|입력|페이지|메뉴|이용|설정/u.test(line.text)) score += 2;
+  if (query.intents.reward && /보상|아이템|쿠폰|지급|수령|획득|등록/u.test(line.text)) score += 1.5;
+  if (query.intents.class && /직업|클래스|스킬|피해량|계수|밸런스|검성|수호성|살성|권성|호법성|궁성|치유성/u.test(line.text)) score += 1.7;
+  if (query.intents.change && /변경|조정|추가|개선|수정|상향|하향|신규/u.test(line.text)) score += 1.2;
+  return { ...line, score: score * line.weight, primaryHits };
+}
+
+function answerNoticeQuestion(question, previousQuestion = "") {
+  const query = analyzeChatQuestion(question, previousQuestion);
+  if (!query.primaryTerms.length && !Object.values(query.intents).some(Boolean)) return {
     role: "assistant",
-    text: "현재 크롤링된 공지·업데이트·CM 이야기에서는 답을 찾지 못했어요. 게임 이름이나 보상·직업·기간처럼 핵심 단어를 넣어 다시 질문해 주세요.",
+    text: "어떤 공지인지 찾을 수 있도록 게임 콘텐츠나 궁금한 항목을 함께 적어 주세요. 예: ‘쿠폰 코드는 뭐야?’, ‘서버 이전 신청은 언제 시작해?’, ‘PC방 출석 조건은?’",
     facts: [],
     sources: [],
   };
 
+  const termWeights = buildChatTermWeights(query);
+  const ranked = newsItems.map((item) => {
+    const lines = chatKnowledgeLines(item).map((line) => scoreChatEvidence(line, query, termWeights)).filter((line) => line.score > 0);
+    const evidence = [...lines].sort((left, right) => right.score - left.score);
+    const uniqueMatches = new Set(lines.flatMap((line) => line.primaryHits));
+    const titleScore = evidence.find((line) => line.kind === "title")?.score || 0;
+    const score = (evidence[0]?.score || 0)
+      + (evidence[1]?.score || 0) * .45
+      + (evidence[2]?.score || 0) * .2
+      + titleScore * .25
+      + uniqueMatches.size * .7;
+    const categoryBoost = (query.intents.notice && item.category === "공지")
+      || (query.intents.update && item.category === "업데이트")
+      || (query.intents.cmStory && item.category === "CM 이야기") ? 1.8 : 0;
+    return { item, evidence, score: score + categoryBoost, matchedTerms: uniqueMatches.size };
+  }).filter((result) => result.score > 0).sort((left, right) => right.score - left.score);
+
   const best = ranked[0];
-  const facts = best.lines.filter((line) => line.score > 0).sort((left, right) => right.score - left.score).slice(0, 4).map((line) => line.text);
-  if (!facts.length && best.item.summary) facts.push(best.item.summary);
-  return {
+  const hasUsefulIntent = query.intents.date || query.intents.deadline || query.intents.start || query.intents.change || query.intents.class || query.intents.condition || query.intents.method || query.intents.reward;
+  if (!best || best.score < 2.5 || (!best.matchedTerms && !hasUsefulIntent)) return {
     role: "assistant",
-    text: "수집된 게시물의 요약과 중요 정보에서 관련 내용을 찾았어요. 아래 날짜와 조건은 원문 링크에서도 확인할 수 있습니다.",
-    facts,
-    sources: ranked.slice(0, 2).map(({ item }) => ({ id: item.id, title: item.title })),
+    text: "질문에 맞는 내용을 수집된 게시물에서 찾지 못했어요. ‘쿠폰’, ‘서버 이전’, ‘PC방 출석’, 직업 이름처럼 공지에 나올 핵심 단어를 더해 다시 물어봐 주세요.",
+    facts: [],
+    sources: [],
   };
+
+  const facts = [];
+  const seenFacts = new Set();
+  for (const line of best.evidence) {
+    const key = normalizeChatText(line.text);
+    if (key.length < 3 || seenFacts.has(key)) continue;
+    seenFacts.add(key);
+    facts.push(line.text);
+    if (facts.length === 5) break;
+  }
+  const sources = ranked.filter((result) => result.score >= best.score * .42).slice(0, 3).map(({ item }) => ({ id: item.id, title: item.title }));
+  const text = query.intents.deadline || query.intents.date
+    ? "질문의 핵심어와 날짜·기간 관련 근거를 우선 확인했어요. 필요한 조건과 원문도 함께 표시합니다."
+    : query.intents.condition || query.intents.method || query.intents.reward
+      ? "질문의 핵심어와 수령·참여 조건이 일치하는 근거를 모았어요. 해당 공지의 중요 항목을 확인해 보세요."
+      : "질문의 핵심어가 제목, 요약, 파트별 중요 정보와 얼마나 일치하는지 비교해 관련 내용을 찾았어요.";
+  return { role: "assistant", text, facts, sources };
 }
 
 function renderChatMessage(message) {
@@ -935,10 +1089,10 @@ function renderChatMessage(message) {
 function renderChatbot() {
   const conversation = state.chatMessages.length
     ? state.chatMessages.map(renderChatMessage).join("")
-    : `<article class="chat-message assistant"><span class="chat-avatar" aria-hidden="true">T</span><div class="chat-bubble"><p>안녕하세요! 크롤링된 공지·업데이트·CM 이야기에서 날짜, 보상, 직업 변경 등을 찾아드릴게요.</p><small>예: “쿠폰은 언제까지 쓸 수 있어?”</small></div></article>`;
+    : `<article class="chat-message assistant"><span class="chat-avatar" aria-hidden="true">T</span><div class="chat-bubble"><p>질문의 핵심어를 크롤링된 제목·요약·중요 항목·일정과 비교해 관련 근거와 원문을 찾아드릴게요.</p><small>예: “쿠폰 사용 기한”, “서버 이전 신청”, “PC방 출석 조건”</small></div></article>`;
   return `<div class="chatbot-dock">
     <section class="chatbot-panel" aria-label="공지 질문 챗봇" ${state.chatOpen ? "" : "hidden"}>
-      <div class="chatbot-heading"><div><strong>공지 질문하기</strong><small>수집된 게시물에서 근거를 찾아요</small></div><div><button type="button" data-action="clear-chat" aria-label="대화 지우기" title="대화 지우기">↻</button><button type="button" data-action="close-chatbot" aria-label="챗봇 닫기" title="닫기">×</button></div></div>
+      <div class="chatbot-heading"><div><strong>공지 질문하기</strong><small>핵심어와 중요 정보를 대조합니다</small></div><div><button type="button" data-action="clear-chat" aria-label="대화 지우기" title="대화 지우기">↻</button><button type="button" data-action="close-chatbot" aria-label="챗봇 닫기" title="닫기">×</button></div></div>
       <div class="chatbot-messages" id="chatbot-messages" role="log" aria-live="polite">${conversation}</div>
       <form class="chatbot-form" id="chatbot-form"><label class="sr-only" for="chatbot-question">공지에 대해 질문하기</label><input id="chatbot-question" name="question" type="text" maxlength="300" placeholder="공지에 대해 질문해 보세요" autocomplete="off" required /><button type="submit" aria-label="질문 보내기">↑</button></form>
     </section>
@@ -1335,7 +1489,8 @@ app.addEventListener("submit", (event) => {
     event.preventDefault();
     const question = String(new FormData(event.target).get("question") || "").trim();
     if (!question) return;
-    state.chatMessages.push({ role: "user", text: question }, answerNoticeQuestion(question));
+    const previousQuestion = [...state.chatMessages].reverse().find((message) => message.role === "user")?.text || "";
+    state.chatMessages.push({ role: "user", text: question }, answerNoticeQuestion(question, previousQuestion));
     state.chatMessages = state.chatMessages.slice(-40);
     state.chatOpen = true;
     render();
