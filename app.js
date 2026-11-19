@@ -156,7 +156,7 @@ function renderHome() {
     <main class="home-page">
       <section class="home-search" aria-labelledby="home-title">
         <h1 id="home-title">어떤 게임을 찾으세요?</h1>
-        <p>공식 공지, 업데이트, CM 소식을 한곳에서 확인해 보세요.</p>
+        <p>패치노트, 공지, 업데이트, 공략 글을 한 곳에서 확인해 보세요.</p>
         <label class="search-field game-search-field">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg>
           <input id="game-search" type="search" value="${escapeHTML(state.gameQuery)}" placeholder="게임 이름 검색" autocomplete="off" aria-label="게임 이름 검색" />
