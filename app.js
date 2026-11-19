@@ -8,7 +8,8 @@ const taskItems = [
 ];
 
 const categories = ["전체", "공지", "업데이트", "CM 이야기"];
-const game = { id: "aion2", name: "아이온2", aliases: "aion2 아이온2" };
+const game = { id: "aion2", name: "아이온2", aliases: "aion2 아이온2", icon: "./assets/aion2-logo.png", route: "#/aion2" };
+const gameCatalog = [game];
 const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false };
 const app = document.querySelector("#app");
 
@@ -294,13 +295,37 @@ function renderHome() {
 }
 
 function renderFollowedGames() {
-  const followed = isGameFollowed(game.id);
-  const latestPatchDate = gameData.lastPatchDate || "아직 수집 전";
+  const followedGames = gameCatalog.filter((item) => isGameFollowed(item.id));
   return `
     <section class="home-following" aria-labelledby="home-following-title">
-      <div class="home-following-heading"><div><span class="home-guide-eyebrow">YOUR GAMES</span><h2 id="home-following-title">팔로우한 게임</h2></div><p>관심 게임의 최신 패치 날짜를 모아봐요.</p></div>
-      ${followed ? `<article class="followed-game-card"><a class="followed-game-link" href="#/aion2"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span class="game-result-copy"><strong>${escapeHTML(game.name)}</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a><button class="game-follow-button following" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-label="${escapeHTML(game.name)} 팔로우 해제" aria-pressed="true">팔로우 해제</button></article>` : `<div class="following-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />검색 결과에서 팔로우를 눌러 관심 게임을 추가하세요.</p></div>`}
+      <div class="home-following-heading"><div><span class="home-guide-eyebrow">YOUR GAMES</span><h2 id="home-following-title">팔로우한 게임</h2></div><p>아이콘을 눌러 입장하고, 우클릭(모바일은 길게 누르기)해 팔로우를 해제하세요.</p></div>
+      ${followedGames.length ? `<div class="followed-game-grid" aria-label="팔로우한 게임 목록">${followedGames.map((item) => `<a class="followed-game-tile" href="${escapeHTML(item.route)}" data-followed-game="true" data-game-id="${escapeHTML(item.id)}" title="${escapeHTML(item.name)} 열기 · 우클릭하여 팔로우 해제"><span class="followed-game-icon"><img src="${escapeHTML(item.icon)}" alt="" /></span><span class="followed-game-name">${escapeHTML(item.name)}</span></a>`).join("")}</div>` : `<div class="following-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />검색 결과에서 팔로우를 눌러 관심 게임을 추가하세요.</p></div>`}
     </section>`;
+}
+
+function closeFollowContextMenu() {
+  app.querySelector(".follow-context-menu")?.remove();
+}
+
+function openFollowContextMenu(gameId, x, y, tileBounds) {
+  const followedGame = gameCatalog.find((item) => item.id === gameId && isGameFollowed(item.id));
+  if (!followedGame) return;
+  closeFollowContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "follow-context-menu";
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = `<strong>${escapeHTML(followedGame.name)}</strong><button type="button" role="menuitem" data-action="toggle-follow" data-game-id="${escapeHTML(followedGame.id)}">팔로우 해제</button>`;
+  app.append(menu);
+  const menuRect = menu.getBoundingClientRect();
+  const left = Math.min(Math.max(8, x), window.innerWidth - menuRect.width - 8);
+  const top = Math.min(Math.max(8, y), window.innerHeight - menuRect.height - 8);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  if (tileBounds && (x < 8 || y < 8)) {
+    menu.style.left = `${Math.min(tileBounds.left, window.innerWidth - menuRect.width - 8)}px`;
+    menu.style.top = `${Math.min(tileBounds.bottom + 5, window.innerHeight - menuRect.height - 8)}px`;
+  }
+  menu.querySelector("[role='menuitem']")?.focus();
 }
 
 function renderGameIntro(title, description, crumb = title) {
@@ -603,6 +628,7 @@ function showToast(message) {
 }
 
 app.addEventListener("click", (event) => {
+  if (!event.target.closest(".follow-context-menu")) closeFollowContextMenu();
   const notificationWrap = event.target.closest(".notification-wrap");
   if (!notificationWrap && state.notificationsOpen) {
     state.notificationsOpen = false;
@@ -766,10 +792,31 @@ app.addEventListener("focusout", (event) => {
 });
 
 app.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeFollowContextMenu();
+    return;
+  }
+  if ((event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && event.target.closest("[data-followed-game]")) {
+    event.preventDefault();
+    const tile = event.target.closest("[data-followed-game]");
+    const bounds = tile.getBoundingClientRect();
+    openFollowContextMenu(tile.dataset.gameId, 0, 0, bounds);
+    return;
+  }
   if (event.target.id !== "game-search" || event.key !== "Enter") return;
   rememberGameSearch(state.gameQuery);
   if (game.aliases.toLocaleLowerCase("ko-KR").includes(state.gameQuery.trim().toLocaleLowerCase("ko-KR"))) window.location.hash = "#/aion2";
 });
+
+app.addEventListener("contextmenu", (event) => {
+  const tile = event.target.closest("[data-followed-game]");
+  if (!tile) return;
+  event.preventDefault();
+  const bounds = tile.getBoundingClientRect();
+  openFollowContextMenu(tile.dataset.gameId, event.clientX, event.clientY, bounds);
+});
+
+window.addEventListener("resize", closeFollowContextMenu);
 
 app.addEventListener("submit", (event) => {
   if (event.target.id === "user-post-form") {
