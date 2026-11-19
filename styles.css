@@ -122,17 +122,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .home-following { width: min(100%, 760px); margin-top: 20px; text-align: left; }
 .home-following-heading { margin-bottom: 11px; display: flex; align-items: flex-end; gap: 12px; }
 .home-following-heading h2 { margin: 4px 0 0; font-size: 16px; letter-spacing: -.035em; }
-.home-following-layout { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: stretch; gap: 11px; }
-.home-game-panel { min-width: 0; min-height: 220px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.home-following-layout { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: start; gap: 11px; }
+.home-game-panel { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .home-game-panel-heading { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .home-game-panel-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
 .home-game-panel-heading > span { color: var(--muted-light); font-size: 11px; }
-.followed-game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+.followed-game-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .followed-game-tile { min-width: 0; min-height: 96px; padding: 9px 5px 7px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 7px; border: 1px solid transparent; border-radius: 9px; text-align: center; transition: border-color 140ms ease, background 140ms ease, transform 140ms ease; }
 .followed-game-tile:hover, .followed-game-tile:focus-visible { transform: translateY(-1px); border-color: var(--line); background: var(--surface); }
-.followed-game-icon { width: 54px; height: 54px; display: block; overflow: hidden; border-radius: 12px; background: #07111d; box-shadow: 0 2px 5px rgba(20, 30, 50, .12); }
+.followed-game-icon { width: 54px; height: 54px; flex: 0 0 auto; display: block; overflow: hidden; border-radius: 12px; background: #07111d; box-shadow: 0 2px 5px rgba(20, 30, 50, .12); }
 .followed-game-icon img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.followed-game-name { max-width: 100%; overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.followed-game-name { max-width: 100%; overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .follow-context-menu { position: fixed; z-index: 60; width: 190px; padding: 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
 .follow-context-menu > strong { padding: 8px 9px; display: block; overflow: hidden; border-bottom: 1px solid var(--line); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .follow-context-menu [role="menuitem"] { width: 100%; min-height: 36px; margin-top: 4px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: #b64f5c; font-size: 12px; text-align: left; cursor: pointer; }
@@ -142,7 +142,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .follow-context-menu [data-action="follow-game"]:focus-visible { background: var(--brand-soft); }
 .discover-panel { display: grid; align-content: start; gap: 10px; }
 .discover-panel .home-game-panel-heading { margin-bottom: 0; }
-.game-discovery-group h4 { margin: 0 0 7px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.discovery-tabs { display: flex; gap: 5px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.discovery-tab { min-height: 30px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.discovery-tab:hover { background: var(--surface-muted); color: var(--ink); }
+.discovery-tab.active { border-color: var(--line); background: var(--surface-muted); color: var(--brand); font-weight: 600; }
+.discovery-content { min-height: 0; }
 .game-discovery-list { display: flex; flex-wrap: wrap; gap: 5px; }
 .discovery-game-tile { min-height: 94px; flex: 0 0 78px; }
 .discovery-game-tile .followed-game-icon { width: 48px; height: 48px; border-radius: 10px; }
@@ -160,6 +164,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .home-guide-eyebrow { color: #8793a5; font-size: 9px; font-weight: 600; letter-spacing: .12em; }
 .home-guide-heading h2 { margin: 4px 0 0; font-size: 16px; letter-spacing: -.035em; }
 .home-guide-heading p { margin: 0 0 1px; color: var(--muted-light); font-size: 11px; }
+.home-guide-heading > .secondary-button { flex: 0 0 auto; }
 .guide-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
 .guide-step { min-width: 0; min-height: 112px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, .76); }
 .guide-step-top { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
@@ -327,6 +332,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .footer-brand { color: var(--ink); font-size: 11px; font-weight: 600; }
 
 .app-dialog { width: min(430px, calc(100% - 30px)); max-width: none; padding: 25px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); box-shadow: var(--shadow); }
+.tutorial-dialog { width: min(500px, calc(100% - 30px)); padding: 24px; }
+.tutorial-topline { position: relative; min-height: 20px; padding-right: 34px; }
+.tutorial-topline .dialog-close { top: -7px; right: -7px; }
+.tutorial-progress { height: 4px; margin: 13px 0 21px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
+.tutorial-progress span { height: 100%; display: block; border-radius: inherit; background: var(--brand); transition: width 180ms ease; }
+.tutorial-step-number { color: var(--brand); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+.tutorial-dialog h2 { margin: 7px 0 9px; font-size: 21px; letter-spacing: -.04em; }
+.tutorial-dialog > p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.85; }
+.tutorial-tip { margin-top: 16px; padding: 11px 12px; display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); }
+.tutorial-tip > span { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 700; }
+.tutorial-tip p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.tutorial-actions { margin-top: 19px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tutorial-skip { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; cursor: pointer; }
+.tutorial-skip input { width: 15px; height: 15px; margin: 0; accent-color: var(--brand); }
+.tutorial-buttons { display: flex; align-items: center; gap: 7px; }
+.tutorial-buttons .secondary-button,
+.tutorial-buttons .primary-button { min-height: 34px; padding-inline: 12px; font-size: 11px; }
 .app-dialog::backdrop { background: rgba(30, 40, 58, .27); backdrop-filter: blur(2px); }
 #dialog-content { position: relative; }
 .dialog-close { position: absolute; top: -7px; right: -7px; width: 29px; height: 29px; border: 0; border-radius: 6px; background: var(--page); color: var(--muted); font-size: 20px; cursor: pointer; }
@@ -488,12 +510,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .home-game-panel { min-height: 0; padding: 12px; }
   .home-following-heading { align-items: flex-start; }
   .following-empty { align-items: flex-start; }
-  .followed-game-grid { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 5px; }
+  .followed-game-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
   .followed-game-tile { min-height: 87px; padding-top: 7px; }
   .followed-game-icon { width: 48px; height: 48px; border-radius: 10px; }
   .followed-game-name { font-size: 11px; }
   .home-guide-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
   .home-guide-heading p { line-height: 1.6; }
+  .home-guide-heading > .secondary-button { min-height: 32px; padding-inline: 10px; }
   .guide-steps { grid-template-columns: 1fr; gap: 8px; }
   .guide-step { min-height: 0; padding: 12px 14px; }
   .guide-step-top { margin-bottom: 7px; }
@@ -542,6 +565,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .post-delete-button { top: 8px; right: 7px; min-height: 28px; padding-inline: 7px; }
   .post-composer { padding: 12px; }
   .post-composer-actions span { font-size: 10px; }
+  .tutorial-dialog { padding: 19px; }
+  .tutorial-dialog h2 { font-size: 18px; }
+  .tutorial-dialog > p { font-size: 12px; }
+  .tutorial-actions { align-items: flex-start; flex-direction: column; }
+  .tutorial-buttons { align-self: flex-end; }
   .game-result { gap: 9px; padding-inline: 10px; }
   .game-result-open { gap: 10px; }
   .game-result-mark { width: 42px; height: 42px; }

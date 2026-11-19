@@ -14,7 +14,7 @@ const gameCatalog = [
   { id: "dokkaebi-world", name: "도깨비의 세계", icon: "./assets/dokkaebi-world.png", route: "#/game/dokkaebi-world" },
   { id: "temppal", name: "템빨", icon: "./assets/temppal.png", route: "#/game/temppal", upcoming: true },
 ];
-const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false };
+const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false, discoveryView: "other", tutorialStep: 0, tutorialShownInSession: false };
 const app = document.querySelector("#app");
 
 function readStorage(key, fallback) {
@@ -276,25 +276,8 @@ function renderHome() {
       ${renderFollowedGames()}
       <section class="home-guide" aria-labelledby="home-guide-title">
         <div class="home-guide-heading">
-          <div><span class="home-guide-eyebrow">QUICK GUIDE</span><h2 id="home-guide-title">이용 방법</h2></div>
-          <p>게임을 찾고 필요한 정보를 간편하게 확인해 보세요.</p>
-        </div>
-        <div class="guide-steps">
-          <article class="guide-step">
-            <div class="guide-step-top"><span class="guide-step-number">01</span><span class="guide-step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg></span></div>
-            <h3>게임 검색하기</h3>
-            <p>검색창에 게임 이름을 입력하고 검색 결과를 선택하세요.</p>
-          </article>
-          <article class="guide-step">
-            <div class="guide-step-top"><span class="guide-step-number">02</span><span class="guide-step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2"/></svg></span></div>
-            <h3>필요한 정보 확인하기</h3>
-            <p>공지, 업데이트, CM 이야기 메뉴에서 원하는 내용을 찾아보세요.</p>
-          </article>
-          <article class="guide-step">
-            <div class="guide-step-top"><span class="guide-step-number">03</span><span class="guide-step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 4.5h10a1 1 0 0 1 1 1v15l-6-3.5L6 20.5v-15a1 1 0 0 1 1-1Z"/><path d="m9 10 2 2 4-4"/></svg></span></div>
-            <h3>저장하고 체크하기</h3>
-            <p>관심 있는 게시물은 북마크하고 최신 소식은 체크리스트로 관리하세요.</p>
-          </article>
+          <div><span class="home-guide-eyebrow">QUICK GUIDE</span><h2 id="home-guide-title">이용 방법</h2><p>단계별 안내를 다시 확인할 수 있어요.</p></div>
+          <button class="secondary-button" type="button" data-action="open-tutorial">튜토리얼 보기</button>
         </div>
       </section>
     </main>`;
@@ -304,6 +287,9 @@ function renderFollowedGames() {
   const followedGames = gameCatalog.filter((item) => isGameFollowed(item.id));
   const otherGames = gameCatalog.filter((item) => !item.upcoming && !isGameFollowed(item.id));
   const upcomingGames = gameCatalog.filter((item) => item.upcoming && !isGameFollowed(item.id));
+  const activeDiscovery = state.discoveryView === "upcoming"
+    ? { title: "곧 출시하는 게임", items: upcomingGames, empty: "현재 출시 예정 게임이 없습니다." }
+    : { title: "다른 게임", items: otherGames, empty: "팔로우할 게임이 없습니다." };
   return `
     <section class="home-following" aria-labelledby="home-following-title">
       <div class="home-following-heading"><div><span class="home-guide-eyebrow">YOUR GAMES</span><h2 id="home-following-title">팔로우한 게임</h2></div></div>
@@ -314,8 +300,13 @@ function renderFollowedGames() {
         </section>
         <section class="home-game-panel discover-panel" aria-label="팔로우할 게임과 출시 예정 게임">
           <div class="home-game-panel-heading"><h3>게임 둘러보기</h3></div>
-          ${renderGameDiscoveryGroup("다른 게임", otherGames, "팔로우할 게임이 없습니다.")}
-          ${renderGameDiscoveryGroup("곧 출시하는 게임", upcomingGames, "현재 출시 예정 게임이 없습니다.")}
+          <div class="discovery-tabs" role="tablist" aria-label="둘러볼 게임 종류">
+            <button type="button" role="tab" aria-selected="${state.discoveryView === "other"}" class="discovery-tab ${state.discoveryView === "other" ? "active" : ""}" data-action="select-discovery-view" data-view="other">다른 게임</button>
+            <button type="button" role="tab" aria-selected="${state.discoveryView === "upcoming"}" class="discovery-tab ${state.discoveryView === "upcoming" ? "active" : ""}" data-action="select-discovery-view" data-view="upcoming">곧 출시하는 게임</button>
+          </div>
+          <div class="discovery-content" role="tabpanel" aria-live="polite" aria-label="${activeDiscovery.title}">
+            ${renderGameDiscoveryList(activeDiscovery.items, activeDiscovery.empty)}
+          </div>
         </section>
       </div>
     </section>`;
@@ -327,12 +318,12 @@ function closeFollowContextMenu() {
 
 function renderGameTile(item, menuMode) {
   const status = item.upcoming ? '<small class="discovery-game-status">출시 예정</small>' : "";
-  const actionHint = menuMode === "add" ? "우클릭하여 팔로우" : "우클릭하여 팔로우 해제";
+  const actionHint = menuMode === "add" ? "우클릭 또는 길게 눌러 팔로우" : "우클릭 또는 길게 눌러 팔로우 해제";
   return `<a class="followed-game-tile ${menuMode === "add" ? "discovery-game-tile" : ""}" href="${escapeHTML(item.route)}" data-game-menu="${menuMode}" data-game-id="${escapeHTML(item.id)}" title="${escapeHTML(item.name)} 열기 · ${actionHint}"><span class="followed-game-icon"><img src="${escapeHTML(item.icon)}" alt="" /></span><span class="followed-game-name">${escapeHTML(item.name)}</span>${status}</a>`;
 }
 
-function renderGameDiscoveryGroup(title, items, emptyMessage) {
-  return `<section class="game-discovery-group"><h4>${escapeHTML(title)}</h4>${items.length ? `<div class="game-discovery-list">${items.map((item) => renderGameTile(item, "add")).join("")}</div>` : `<p class="game-discovery-empty">${escapeHTML(emptyMessage)}</p>`}</section>`;
+function renderGameDiscoveryList(items, emptyMessage) {
+  return items.length ? `<div class="game-discovery-list">${items.map((item) => renderGameTile(item, "add")).join("")}</div>` : `<p class="game-discovery-empty">${escapeHTML(emptyMessage)}</p>`;
 }
 
 function openGameContextMenu(gameId, mode, x, y, tileBounds) {
@@ -579,7 +570,52 @@ function renderDetail(id) {
 }
 
 function renderModal() {
-  return `<dialog class="app-dialog" id="app-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog><div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+  return `<dialog class="app-dialog" id="app-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog><dialog class="app-dialog tutorial-dialog" id="tutorial-dialog" aria-labelledby="tutorial-title"></dialog><div class="toast" id="toast" role="status" aria-live="polite"></div>`;
+}
+
+const tutorialSteps = [
+  { title: "게임을 찾아 팔로우하세요", body: "검색창에서 게임을 찾거나 오른쪽 게임 둘러보기에서 아이콘을 선택하세요. 아이콘을 누르면 게임 페이지로 이동하고, 둘러보기 목록은 우클릭하거나 길게 눌러 팔로우할 수 있어요.", tip: "내 게임 아이콘을 우클릭하거나 길게 누르면 팔로우를 해제할 수 있습니다." },
+  { title: "새 소식을 확인하세요", body: "아이온2 페이지의 공지, 업데이트, CM 이야기에서 최신 글을 확인할 수 있어요. 게시글을 열면 AI 요약과 항목별 분석, 공식 원문 링크가 표시됩니다.", tip: "읽은 글은 목록에서 읽음 표시로 구분됩니다." },
+  { title: "북마크와 게임을 관리하세요", body: "게시글은 북마크로 저장하고, 대시보드에서 팔로우한 게임과 저장한 글을 관리하세요. 팔로우한 게임에 새 글이 올라오면 알림 메뉴에서 확인할 수 있어요.", tip: "이용 방법은 메인 화면의 ‘튜토리얼 보기’에서 다시 열 수 있습니다." },
+];
+
+function renderTutorialStep() {
+  const dialog = app.querySelector("#tutorial-dialog");
+  if (!dialog) return;
+  const index = Math.max(0, Math.min(state.tutorialStep, tutorialSteps.length - 1));
+  const step = tutorialSteps[index];
+  const checked = readStorage("todaypatch.skipTutorial", false);
+  dialog.innerHTML = `
+    <div class="tutorial-topline"><span class="page-eyebrow">이용 가이드 · ${index + 1} / ${tutorialSteps.length}</span><button class="dialog-close" type="button" data-action="tutorial-close" aria-label="튜토리얼 닫기">×</button></div>
+    <div class="tutorial-progress" aria-hidden="true"><span style="width:${((index + 1) / tutorialSteps.length) * 100}%"></span></div>
+    <span class="tutorial-step-number">STEP ${String(index + 1).padStart(2, "0")}</span>
+    <h2 id="tutorial-title" tabindex="-1">${escapeHTML(step.title)}</h2>
+    <p id="tutorial-copy">${escapeHTML(step.body)}</p>
+    <div class="tutorial-tip"><span aria-hidden="true">i</span><p>${escapeHTML(step.tip)}</p></div>
+    <div class="tutorial-actions">
+      <label class="tutorial-skip"><input type="checkbox" data-action="skip-tutorial" ${checked ? "checked" : ""} /><span>앞으로 자동으로 띄우지 않기</span></label>
+      <div class="tutorial-buttons">${index ? '<button class="secondary-button" type="button" data-action="tutorial-previous">이전</button>' : ""}<button class="primary-button" type="button" data-action="tutorial-next">${index === tutorialSteps.length - 1 ? "완료" : "다음"}</button></div>
+    </div>`;
+}
+
+function openTutorial() {
+  const dialog = app.querySelector("#tutorial-dialog");
+  if (!dialog) return;
+  state.tutorialStep = 0;
+  state.tutorialShownInSession = true;
+  renderTutorialStep();
+  if (!dialog.open) dialog.showModal();
+  dialog.querySelector("#tutorial-title")?.focus();
+}
+
+function maybeOpenTutorial() {
+  if (state.tutorialShownInSession || readStorage("todaypatch.skipTutorial", false)) return;
+  state.tutorialShownInSession = true;
+  state.tutorialStep = 0;
+  renderTutorialStep();
+  const dialog = app.querySelector("#tutorial-dialog");
+  dialog?.showModal();
+  dialog?.querySelector("#tutorial-title")?.focus();
 }
 
 function renderFooter() {
@@ -648,6 +684,7 @@ function render() {
   app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}`;
   drawNewsList();
   drawGameResults();
+  maybeOpenTutorial();
 }
 
 function openDialog(kind) {
@@ -789,6 +826,25 @@ app.addEventListener("click", (event) => {
     const followedGame = gameCatalog.find((item) => item.id === gameId);
     showToast(`${followedGame?.name || "게임"} 팔로우를 시작했어요.`);
   }
+  if (action === "select-discovery-view") {
+    state.discoveryView = button.dataset.view === "upcoming" ? "upcoming" : "other";
+    render();
+  }
+  if (action === "open-tutorial") openTutorial();
+  if (action === "tutorial-previous") {
+    state.tutorialStep = Math.max(0, state.tutorialStep - 1);
+    renderTutorialStep();
+    app.querySelector("#tutorial-title")?.focus();
+  }
+  if (action === "tutorial-next") {
+    if (state.tutorialStep >= tutorialSteps.length - 1) app.querySelector("#tutorial-dialog")?.close();
+    else {
+      state.tutorialStep += 1;
+      renderTutorialStep();
+      app.querySelector("#tutorial-title")?.focus();
+    }
+  }
+  if (action === "tutorial-close") app.querySelector("#tutorial-dialog")?.close();
   if (action === "toggle-post-form") {
     const form = app.querySelector("#user-post-form");
     const opening = form.hidden;
@@ -832,6 +888,10 @@ app.addEventListener("input", (event) => {
     state.gameQuery = event.target.value;
     drawGameResults();
   }
+});
+
+app.addEventListener("change", (event) => {
+  if (event.target.matches('[data-action="skip-tutorial"]')) writeStorage("todaypatch.skipTutorial", event.target.checked);
 });
 
 app.addEventListener("focusin", (event) => {
