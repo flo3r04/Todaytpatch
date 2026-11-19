@@ -289,20 +289,28 @@ async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0, f
     if (!response.ok || apiError) {
       const errorStatus = Number(apiError?.code || response.status);
       const errorMetadata = apiError?.metadata || {};
-      const sharedProviderLimit = errorStatus === 429 && errorMetadata.limit_source === "upstream_provider_shared_pool";
-      if (errorStatus === 429 && attempt === 0) {
+      const previousErrors = Array.isArray(errorMetadata.previous_errors) ? errorMetadata.previous_errors : [];
+      const isUpstreamRateLimit = (providerError) => Number(providerError?.code) === 429
+        || providerError?.metadata?.limit_source === "upstream_provider_shared_pool"
+        || /temporarily rate-limited upstream/i.test(`${providerError?.message || ""} ${providerError?.raw || ""}`);
+      const upstreamRateLimited = errorStatus === 429 || previousErrors.some(isUpstreamRateLimit);
+      const sharedProviderLimit = errorMetadata.limit_source === "upstream_provider_shared_pool"
+        || previousErrors.some((providerError) => providerError?.metadata?.limit_source === "upstream_provider_shared_pool"
+          || /temporarily rate-limited upstream/i.test(providerError?.raw || ""));
+      if (upstreamRateLimited && attempt === 0) {
         const retryAfterHeader = Number(response.headers.get("Retry-After"));
-        const retryAfterMetadata = Number(errorMetadata.retry_after_seconds);
+        const retryAfterProvider = previousErrors.find(isUpstreamRateLimit);
+        const retryAfterMetadata = Number(errorMetadata.retry_after_seconds || retryAfterProvider?.metadata?.retry_after_seconds);
         const retryAfterSeconds = Math.min(
           Math.max(retryAfterMetadata || retryAfterHeader || 60, 1),
           120,
         );
-        console.warn(`OpenRouter가 요청을 제한했습니다. ${retryAfterSeconds}초 대기 후 한 번 재시도합니다.`);
+        console.warn(`OpenRouter 또는 Gemma 제공처가 요청을 제한했습니다. ${retryAfterSeconds}초 대기 후 같은 Gemma 모델로 한 번 재시도합니다.`);
         await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
         return summarizeBatch(items, apiKey, modelName, attempt + 1, formatAttempt);
       }
       const limitMessage = sharedProviderLimit ? "Gemma 제공처가 계속 요청을 제한합니다. " : "";
-      throw new Error(`${limitMessage}다른 모델로 대체하지 않고 중단합니다. HTTP ${errorStatus} ${errorBody.slice(0, 500)}`);
+      throw new Error(`${limitMessage}같은 Gemma로 재시도했지만 실패했습니다. 다른 모델로 대체하지 않고 중단합니다. HTTP ${errorStatus} ${errorBody.slice(0, 500)}`);
     }
   } else {
     if (!response.ok) {
