@@ -169,7 +169,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .news-list { display: flex; flex-direction: column; gap: 9px; }
 .news-card { position: relative; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); transition: border-color 140ms ease, box-shadow 140ms ease; }
 .news-card:hover { border-color: #cfd8e7; box-shadow: 0 5px 15px rgba(35, 48, 77, .035); }
-.news-main { display: block; min-height: 119px; padding: 15px 54px 39px 16px; border-radius: inherit; }
+.news-main { display: block; min-height: 94px; padding: 13px 54px 22px 16px; border-radius: inherit; }
 .news-topline { min-height: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .category-pill { min-height: 20px; padding: 3px 7px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; background: #eef2ff; color: var(--brand); font-size: 10px; font-weight: 500; white-space: nowrap; }
 .category-notice { background: #f0f3f7; color: #68778d; }
@@ -357,7 +357,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dashboard-empty p, .dashboard-empty span { margin: 0; color: var(--muted); font-size: 12px; }
 .dashboard-empty a, .dashboard-more { color: var(--brand); font-size: 12px; }
 .dashboard-news-list { gap: 8px; }
-.dashboard-news-list .news-main { min-height: 106px; padding: 12px 43px 37px 12px; }
+.dashboard-news-list .news-main { min-height: 92px; padding: 12px 43px 22px 12px; }
 .dashboard-news-list .news-main h3 { font-size: 14px; }
 .dashboard-news-list .news-source-link { right: 12px; bottom: 10px; font-size: 11px; }
 .dashboard-news-list .bookmark-button { top: 8px; right: 7px; }
@@ -437,7 +437,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .filter-row { gap: 2px; }
   .filter-chip { padding-inline: 8px; }
   .clear-filter { padding-left: 5px; }
-  .news-main { min-height: 100px; padding: 13px 43px 37px 13px; }
+  .news-main { min-height: 90px; padding: 12px 43px 20px 13px; }
   .news-main h3 { font-size: 15px; }
   .news-source { font-size: 11px; }
   .read-badge { font-size: 10px; }
@@ -454,7 +454,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .dashboard-columns { grid-template-columns: 1fr; gap: 10px; }
   .dashboard-section { padding: 14px; }
   .dashboard-section-heading h2 { font-size: 16px; }
-  .dashboard-news-list .news-main { padding: 12px 40px 37px 12px; }
+  .dashboard-news-list .news-main { padding: 11px 40px 20px 12px; }
   .dashboard-posts .dashboard-section-heading { align-items: flex-start; }
   .dashboard-posts .dashboard-section-heading > .primary-button { min-height: 32px; padding-inline: 9px; font-size: 10px; }
   .user-post-card { padding: 12px 58px 12px 10px; }
