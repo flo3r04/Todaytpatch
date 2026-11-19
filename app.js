@@ -276,7 +276,7 @@ function renderHome() {
       ${renderFollowedGames()}
       <section class="home-guide" aria-labelledby="home-guide-title">
         <div class="home-guide-heading">
-          <div><span class="home-guide-eyebrow">QUICK GUIDE</span><h2 id="home-guide-title">이용 방법</h2><p>단계별 안내를 다시 확인할 수 있어요.</p></div>
+          <div><span class="home-guide-eyebrow">QUICK GUIDE</span><h2 id="home-guide-title">이용 방법</h2></div>
           <button class="secondary-button" type="button" data-action="open-tutorial">튜토리얼 보기</button>
         </div>
       </section>
