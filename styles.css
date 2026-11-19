@@ -179,7 +179,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .category-maintenance { background: #fff5e9; color: #a97832; }
 .category-guide { background: #f0f3f7; color: #68778d; }
 .news-source { color: var(--muted-light); font-size: 12px; }
-.news-main h3 { margin: 9px 0 4px; font-size: 16px; line-height: 1.55; font-weight: 600; letter-spacing: -.025em; }
+.news-main h3 { margin: 9px 0 4px; font-size: 17px; line-height: 1.55; font-weight: 600; letter-spacing: -.025em; }
 .news-source-link { position: absolute; right: 16px; bottom: 13px; color: var(--brand); font-size: 12px; }
 .read-badge { padding: 3px 7px; border-radius: 5px; background: #edf1f7; color: #607087; font-size: 11px; font-weight: 600; }
 .news-card.is-read .news-main h3 { color: var(--muted); }
@@ -358,7 +358,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dashboard-empty a, .dashboard-more { color: var(--brand); font-size: 12px; }
 .dashboard-news-list { gap: 8px; }
 .dashboard-news-list .news-main { min-height: 92px; padding: 12px 43px 22px 12px; }
-.dashboard-news-list .news-main h3 { font-size: 14px; }
+.dashboard-news-list .news-main h3 { font-size: 15px; }
 .dashboard-news-list .news-source-link { right: 12px; bottom: 10px; font-size: 11px; }
 .dashboard-news-list .bookmark-button { top: 8px; right: 7px; }
 .dashboard-posts { margin-top: 15px; }
@@ -438,7 +438,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .filter-chip { padding-inline: 8px; }
   .clear-filter { padding-left: 5px; }
   .news-main { min-height: 90px; padding: 12px 43px 20px 13px; }
-  .news-main h3 { font-size: 15px; }
+  .news-main h3 { font-size: 16px; }
   .news-source { font-size: 11px; }
   .read-badge { font-size: 10px; }
   .bookmark-button { top: 10px; right: 7px; }
