@@ -184,7 +184,7 @@ function responseOutputText(response) {
     .find((contentItem) => contentItem.type === "output_text")?.text;
 }
 
-async function summarizeBatch(items, apiKey, modelName = aiModel) {
+async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0) {
   const inputItems = items.map(({ id, category, title, bodyText }) => ({
     id,
     category,
@@ -281,9 +281,20 @@ async function summarizeBatch(items, apiKey, modelName = aiModel) {
       const errorStatus = Number(apiError?.code || response.status);
       const errorMetadata = apiError?.metadata || {};
       const sharedProviderLimit = errorStatus === 429 && errorMetadata.limit_source === "upstream_provider_shared_pool";
+      if (errorStatus === 429 && attempt === 0) {
+        const retryAfterHeader = Number(response.headers.get("Retry-After"));
+        const retryAfterMetadata = Number(errorMetadata.retry_after_seconds);
+        const retryAfterSeconds = Math.min(
+          Math.max(retryAfterMetadata || retryAfterHeader || 60, 1),
+          120,
+        );
+        console.warn(`OpenRouter가 요청을 제한했습니다. ${retryAfterSeconds}초 대기 후 한 번 재시도합니다.`);
+        await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
+        return summarizeBatch(items, apiKey, modelName, attempt + 1);
+      }
       if (sharedProviderLimit && openRouterFallbackModel && modelName !== openRouterFallbackModel) {
         console.warn(`OpenRouter 제공처 제한으로 ${modelName} 대신 ${openRouterFallbackModel}로 요약을 다시 요청합니다.`);
-        return summarizeBatch(items, apiKey, openRouterFallbackModel);
+        return summarizeBatch(items, apiKey, openRouterFallbackModel, attempt + 1);
       }
       throw new Error(`openrouter 요약 요청 실패: HTTP ${errorStatus} ${errorBody.slice(0, 500)}`);
     }
