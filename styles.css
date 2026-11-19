@@ -119,18 +119,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .recent-search-item { min-height: 30px; padding: 0 10px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-muted); color: var(--muted); font-size: 11px; cursor: pointer; }
 .recent-search-item:hover { border-color: var(--brand); color: var(--brand); }
 .recent-search-item svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.7; }
-.home-following { width: min(100%, 760px); margin-top: 20px; text-align: left; }
-.home-following-heading { margin-bottom: 11px; display: flex; align-items: flex-end; gap: 12px; }
+.home-following { width: min(100%, 760px); margin-top: 18px; text-align: left; }
+.home-following-heading { margin-bottom: 8px; display: flex; align-items: flex-end; gap: 12px; }
 .home-following-heading h2 { margin: 4px 0 0; font-size: 16px; letter-spacing: -.035em; }
-.home-following-layout { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: stretch; gap: 11px; }
-.home-game-panel { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
-.home-game-panel-heading { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.home-following-layout { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: stretch; gap: 8px; }
+.home-game-panel { min-width: 0; padding: 10px; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.home-game-panel-heading { margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .home-game-panel-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
 .home-game-panel-heading > span { color: var(--muted-light); font-size: 11px; }
-.followed-game-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.followed-game-tile { min-width: 0; min-height: 96px; padding: 9px 5px 7px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 7px; border: 1px solid transparent; border-radius: 9px; text-align: center; transition: border-color 140ms ease, background 140ms ease, transform 140ms ease; }
+.game-list-box { min-width: 0; min-height: 98px; padding: 5px; flex: 1 1 auto; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-muted); }
+.followed-game-grid,
+.game-discovery-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.followed-panel { gap: 8px; }
+.followed-panel .home-game-panel-heading { margin-bottom: 0; }
+.followed-game-tile { min-width: 0; min-height: 82px; padding: 6px 3px 5px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px; border: 1px solid transparent; border-radius: 7px; text-align: center; transition: border-color 140ms ease, background 140ms ease, transform 140ms ease; }
 .followed-game-tile:hover, .followed-game-tile:focus-visible { transform: translateY(-1px); border-color: var(--line); background: var(--surface); }
-.followed-game-icon { width: 54px; height: 54px; flex: 0 0 auto; display: block; overflow: hidden; border-radius: 12px; background: #07111d; box-shadow: 0 2px 5px rgba(20, 30, 50, .12); }
+.followed-game-icon { width: 50px; height: 50px; flex: 0 0 auto; display: block; overflow: hidden; border-radius: 11px; background: #07111d; box-shadow: 0 2px 5px rgba(20, 30, 50, .12); }
 .followed-game-icon img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .followed-game-name { max-width: 100%; overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .follow-context-menu { position: fixed; z-index: 60; width: 190px; padding: 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
@@ -140,18 +144,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .follow-context-menu [data-action="follow-game"] { color: var(--brand); }
 .follow-context-menu [data-action="follow-game"]:hover,
 .follow-context-menu [data-action="follow-game"]:focus-visible { background: var(--brand-soft); }
-.discover-panel { display: grid; align-content: start; gap: 10px; }
+.discover-panel { gap: 8px; }
 .discover-panel .home-game-panel-heading { margin-bottom: 0; }
-.discovery-tabs { display: flex; gap: 5px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.discovery-tabs { display: flex; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.followed-tabs .discovery-tab { cursor: default; pointer-events: none; }
 .discovery-tab { min-height: 30px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
 .discovery-tab:hover { background: var(--surface-muted); color: var(--ink); }
 .discovery-tab.active { border-color: var(--line); background: var(--surface-muted); color: var(--brand); font-weight: 600; }
-.discovery-content { min-height: 0; }
-.game-discovery-list { display: flex; flex-wrap: wrap; gap: 5px; }
-.discovery-game-tile { min-height: 94px; flex: 0 0 78px; }
-.discovery-game-tile .followed-game-icon { width: 48px; height: 48px; border-radius: 10px; }
+.discovery-content { min-height: 0; flex: 1 1 auto; display: flex; }
+.discovery-list-box { width: 100%; }
+.discovery-game-tile { min-height: 82px; }
+.game-list-empty { min-height: 82px; display: flex; align-items: center; gap: 9px; padding: 8px; }
+.game-list-empty p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.game-list-empty strong { color: var(--ink); font-weight: 600; }
 .discovery-game-status { color: var(--muted-light); font-size: 9px; line-height: 1.2; }
-.game-discovery-empty { margin: 0; padding: 8px 0; color: var(--muted-light); font-size: 11px; }
+.game-discovery-empty { margin: 0; padding: 8px; color: var(--muted-light); font-size: 11px; }
 .followed-game-card { min-height: 70px; display: flex; align-items: center; gap: 12px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .followed-game-link { min-width: 0; flex: 1; display: flex; align-items: center; gap: 12px; }
 .followed-game-card .game-result-mark { width: 42px; height: 42px; }
@@ -506,11 +513,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .home-guide { margin-top: 22px; }
   .home-following { margin-top: 18px; }
   .home-following-layout { grid-template-columns: 1fr; gap: 9px; }
-  .home-game-panel { min-height: 0; padding: 12px; }
+  .home-game-panel { min-height: 0; padding: 9px; }
   .home-following-heading { align-items: flex-start; }
   .following-empty { align-items: flex-start; }
-  .followed-game-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
-  .followed-game-tile { min-height: 87px; padding-top: 7px; }
+  .followed-game-grid,
+  .game-discovery-list { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
+  .followed-game-tile { min-height: 77px; padding: 5px 2px 4px; }
   .followed-game-icon { width: 48px; height: 48px; border-radius: 10px; }
   .followed-game-name { font-size: 11px; }
   .home-guide-heading { align-items: flex-start; flex-direction: column; gap: 5px; }

@@ -296,7 +296,10 @@ function renderFollowedGames() {
       <div class="home-following-layout">
         <section class="home-game-panel followed-panel" aria-label="내가 팔로우한 게임">
           <div class="home-game-panel-heading"><h3>내 게임</h3><span>${followedGames.length}개</span></div>
-          ${followedGames.length ? `<div class="followed-game-grid">${followedGames.map((item) => renderGameTile(item, "remove")).join("")}</div>` : `<div class="following-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />오른쪽 게임 목록에서 추가해 보세요.</p></div>`}
+          <div class="discovery-tabs followed-tabs" aria-label="팔로우 게임 종류"><span class="discovery-tab active" aria-current="true">팔로우 중</span></div>
+          <div class="game-list-box followed-list-box" aria-label="팔로우한 게임 목록">
+            ${followedGames.length ? `<div class="followed-game-grid">${followedGames.map((item) => renderGameTile(item, "remove")).join("")}</div>` : `<div class="game-list-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />오른쪽 게임 목록에서 추가해 보세요.</p></div>`}
+          </div>
         </section>
         <section class="home-game-panel discover-panel" aria-label="팔로우할 게임과 출시 예정 게임">
           <div class="home-game-panel-heading"><h3>게임 둘러보기</h3></div>
@@ -305,7 +308,7 @@ function renderFollowedGames() {
             <button type="button" role="tab" aria-selected="${state.discoveryView === "upcoming"}" class="discovery-tab ${state.discoveryView === "upcoming" ? "active" : ""}" data-action="select-discovery-view" data-view="upcoming">곧 출시하는 게임</button>
           </div>
           <div class="discovery-content" role="tabpanel" aria-live="polite" aria-label="${activeDiscovery.title}">
-            ${renderGameDiscoveryList(activeDiscovery.items, activeDiscovery.empty)}
+            <div class="game-list-box discovery-list-box">${renderGameDiscoveryList(activeDiscovery.items, activeDiscovery.empty)}</div>
           </div>
         </section>
       </div>
