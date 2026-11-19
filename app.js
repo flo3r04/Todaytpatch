@@ -40,6 +40,10 @@ applyTheme(readStorage("todaypatch.theme", "light"));
 
 const savedTasks = () => readStorage("todaypatch.tasks", {});
 const savedNews = () => readStorage("todaypatch.bookmarks", []);
+const userPosts = () => {
+  const posts = readStorage("todaypatch.userPosts", []);
+  return Array.isArray(posts) ? posts.filter((post) => post && typeof post.id === "string" && typeof post.title === "string" && typeof post.body === "string") : [];
+};
 const readNews = () => {
   const ids = readStorage("todaypatch.readNews", []);
   return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
@@ -95,6 +99,7 @@ function routeParts(route = currentRoute()) {
 function routeKind(route = currentRoute()) {
   const parts = routeParts(route);
   if (!parts.length) return "home";
+  if (parts[0] === "dashboard") return "dashboard";
   if (parts[0] === "aion2") {
     if (parts[1] === "news" && parts[2]) return "detail";
     if (["news", "notices", "updates", "cm-stories", "tasks", "bookmarks"].includes(parts[1])) return parts[1];
@@ -110,7 +115,7 @@ function detailId() {
 
 function renderHeader() {
   const kind = routeKind();
-  const inGame = kind !== "home";
+  const inGame = kind !== "home" && kind !== "dashboard";
   const isDark = document.documentElement.dataset.theme === "dark";
   const themeLabel = isDark ? "라이트 모드" : "다크 모드";
   const themeIcon = isDark
@@ -140,6 +145,7 @@ function renderHeader() {
           <nav class="main-nav" id="main-nav" aria-label="아이온2 메뉴">
             ${links.map(([label, href, route]) => `<a class="nav-link ${kind === route || (kind === "detail" && route === activeDetailRoute) ? "active" : ""}" href="${href}" ${kind === route || (kind === "detail" && route === activeDetailRoute) ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
           </nav>` : `<span class="header-caption">게임별 소식을 한곳에서</span>`}
+        <a class="dashboard-link ${kind === "dashboard" ? "active" : ""}" href="#/dashboard" ${kind === "dashboard" ? 'aria-current="page"' : ""} aria-label="대시보드"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.7-3.2 3-5 6.5-5s5.8 1.8 6.5 5"/></svg><span>대시보드</span></a>
         <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
       </div>
     </header>`;
@@ -274,6 +280,50 @@ function renderBookmarksPage() {
       <section class="content-section feed-section">
         <div class="section-heading list-heading"><div><h2>북마크한 게시물</h2><p>저장한 글 <span>${bookmarks.length}건</span></p></div></div>
         ${bookmarks.length ? `<div class="news-list">${bookmarks.map(renderNewsCard).join("")}</div>` : `<div class="empty-state bookmark-empty"><span aria-hidden="true">★</span><strong>저장한 게시물이 없어요.</strong><p>게시물 카드의 북마크 아이콘을 눌러 여기에 모아보세요.</p><a class="secondary-button" href="#/aion2/news">전체 소식 보기</a></div>`}
+      </section>
+    </main>`;
+}
+
+function renderDashboardFollowedGame() {
+  const latestPatchDate = gameData.lastPatchDate || "아직 수집 전";
+  return `<article class="dashboard-game-item"><a class="dashboard-game-link" href="#/aion2"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span><strong>${escapeHTML(game.name)}</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a><button class="game-follow-button following" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-label="${escapeHTML(game.name)} 팔로우 해제" aria-pressed="true">팔로우 해제</button></article>`;
+}
+
+function renderUserPost(post) {
+  const createdAt = post.createdAt ? formatDisplayDate(post.createdAt) : "날짜 정보 없음";
+  return `<article class="user-post-card"><details><summary><span class="user-post-title">${escapeHTML(post.title)}</span><span class="user-post-date">${escapeHTML(createdAt)}</span></summary><p>${escapeHTML(post.body)}</p></details><button class="post-delete-button" type="button" data-action="delete-user-post" data-id="${escapeHTML(post.id)}">삭제</button></article>`;
+}
+
+function renderDashboardPage() {
+  const followed = followedGameIds().includes(game.id);
+  const bookmarks = newsItems.filter((item) => isSaved(item.id));
+  const posts = userPosts();
+  return `
+    <main class="page-width game-page dashboard-page">
+      <div class="page-heading dashboard-heading"><div><span class="page-eyebrow">MY TODAYPATCH</span><h1>내 대시보드</h1><p>팔로우한 게임과 저장한 소식, 내가 작성한 글을 관리하세요.</p></div></div>
+      <div class="dashboard-stats" aria-label="내 활동 요약">
+        <div class="dashboard-stat"><span>팔로우 게임</span><strong>${followed ? 1 : 0}</strong></div>
+        <div class="dashboard-stat"><span>저장한 북마크</span><strong>${bookmarks.length}</strong></div>
+        <div class="dashboard-stat"><span>내 작성 글</span><strong>${posts.length}</strong></div>
+      </div>
+      <div class="dashboard-columns">
+        <section class="dashboard-section" aria-labelledby="dashboard-games-title">
+          <div class="dashboard-section-heading"><div><span class="page-eyebrow">MY GAMES</span><h2 id="dashboard-games-title">팔로우한 게임</h2></div><span class="dashboard-count">${followed ? 1 : 0}개</span></div>
+          ${followed ? renderDashboardFollowedGame() : `<div class="dashboard-empty"><p>팔로우 중인 게임이 없습니다.</p><a href="#/">게임 찾아보기 <span aria-hidden="true">→</span></a></div>`}
+        </section>
+        <section class="dashboard-section" aria-labelledby="dashboard-bookmarks-title">
+          <div class="dashboard-section-heading"><div><span class="page-eyebrow">SAVED NEWS</span><h2 id="dashboard-bookmarks-title">북마크 관리</h2></div><a class="dashboard-more" href="#/aion2/bookmarks">전체 보기 <span aria-hidden="true">→</span></a></div>
+          ${bookmarks.length ? `<div class="news-list dashboard-news-list">${bookmarks.slice(0, 4).map(renderNewsCard).join("")}</div>` : `<div class="dashboard-empty"><p>저장한 게시물이 없습니다.</p><a href="#/aion2/news">전체 소식 보기 <span aria-hidden="true">→</span></a></div>`}
+        </section>
+      </div>
+      <section class="dashboard-section dashboard-posts" aria-labelledby="dashboard-posts-title">
+        <div class="dashboard-section-heading"><div><span class="page-eyebrow">MY POSTS</span><h2 id="dashboard-posts-title">내가 작성한 글</h2><p>이 브라우저에 저장되어 나에게만 보이는 글입니다.</p></div><button class="primary-button" type="button" data-action="toggle-post-form" aria-expanded="false">글 작성하기</button></div>
+        <form id="user-post-form" class="post-composer" hidden>
+          <label for="user-post-title">제목</label><input id="user-post-title" name="title" type="text" maxlength="100" placeholder="글 제목을 입력하세요" required />
+          <label for="user-post-body">내용</label><textarea id="user-post-body" name="body" rows="5" maxlength="5000" placeholder="나중에 다시 볼 내용을 적어두세요" required></textarea>
+          <div class="post-composer-actions"><span>작성한 글은 이 기기의 브라우저에만 저장됩니다.</span><button class="primary-button" type="submit">저장</button></div>
+        </form>
+        ${posts.length ? `<div class="user-post-list">${posts.map(renderUserPost).join("")}</div>` : `<div class="dashboard-empty post-empty"><p>아직 작성한 글이 없습니다.</p><span>글 작성하기를 눌러 메모나 공략을 저장해 보세요.</span></div>`}
       </section>
     </main>`;
 }
@@ -418,6 +468,7 @@ function render() {
   else if (["news", "notices", "updates", "cm-stories"].includes(kind)) page = renderFeedPage(kind);
   else if (kind === "tasks") page = renderTasksPage();
   else if (kind === "bookmarks") page = renderBookmarksPage();
+  else if (kind === "dashboard") page = renderDashboardPage();
   else if (kind === "detail") page = renderDetail(detailId());
   else page = renderHome();
   app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}`;
@@ -500,6 +551,18 @@ app.addEventListener("click", (event) => {
     render();
     showToast(wasFollowed ? "팔로우를 해제했어요." : "아이온2를 팔로우했어요.");
   }
+  if (action === "toggle-post-form") {
+    const form = app.querySelector("#user-post-form");
+    const opening = form.hidden;
+    form.hidden = !opening;
+    button.setAttribute("aria-expanded", String(opening));
+    if (opening) form.querySelector("input")?.focus();
+  }
+  if (action === "delete-user-post") {
+    writeStorage("todaypatch.userPosts", userPosts().filter((post) => post.id !== id));
+    render();
+    showToast("작성한 글을 삭제했어요.");
+  }
   if (action === "toggle-task") {
     const checked = savedTasks();
     checked[id] = !checked[id];
@@ -553,10 +616,23 @@ app.addEventListener("keydown", (event) => {
 });
 
 app.addEventListener("submit", (event) => {
-  if (event.target.id !== "report-form") return;
-  event.preventDefault();
-  app.querySelector("#app-dialog").close();
-  showToast("신고 내용을 확인했어요. 저장 기능은 서비스 연동 후 제공됩니다.");
+  if (event.target.id === "user-post-form") {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const title = String(formData.get("title") || "").trim();
+    const body = String(formData.get("body") || "").trim();
+    if (!title || !body) return;
+    const id = globalThis.crypto?.randomUUID?.() || `post-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    writeStorage("todaypatch.userPosts", [{ id, title, body, createdAt: new Date().toISOString() }, ...userPosts()]);
+    render();
+    showToast("작성한 글을 저장했어요.");
+    return;
+  }
+  if (event.target.id === "report-form") {
+    event.preventDefault();
+    app.querySelector("#app-dialog").close();
+    showToast("신고 내용을 확인했어요. 저장 기능은 서비스 연동 후 제공됩니다.");
+  }
 });
 
 window.addEventListener("hashchange", () => {
