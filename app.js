@@ -145,8 +145,8 @@ function renderHeader() {
           <nav class="main-nav" id="main-nav" aria-label="아이온2 메뉴">
             ${links.map(([label, href, route]) => `<a class="nav-link ${kind === route || (kind === "detail" && route === activeDetailRoute) ? "active" : ""}" href="${href}" ${kind === route || (kind === "detail" && route === activeDetailRoute) ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
           </nav>` : `<span class="header-caption">게임별 소식을 한곳에서</span>`}
-        <a class="dashboard-link ${kind === "dashboard" ? "active" : ""}" href="#/dashboard" ${kind === "dashboard" ? 'aria-current="page"' : ""} aria-label="대시보드"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.7-3.2 3-5 6.5-5s5.8 1.8 6.5 5"/></svg><span>대시보드</span></a>
         <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
+        <a class="dashboard-link ${kind === "dashboard" ? "active" : ""}" href="#/dashboard" ${kind === "dashboard" ? 'aria-current="page"' : ""} aria-label="대시보드"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.7-3.2 3-5 6.5-5s5.8 1.8 6.5 5"/></svg><span>대시보드</span></a>
       </div>
     </header>`;
 }

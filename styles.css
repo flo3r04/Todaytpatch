@@ -400,9 +400,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .header-divider { height: 20px; }
   .mobile-menu-button { width: 32px; height: 32px; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--muted); font-size: 14px; cursor: pointer; }
   .header-caption { display: none; }
-  .theme-toggle { width: 32px; min-height: 32px; padding: 0; }
+  .theme-toggle { width: 32px; min-height: 32px; margin-left: auto; padding: 0; }
   .theme-toggle span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  .dashboard-link { width: 32px; min-height: 32px; margin-left: auto; padding: 0; }
+  .dashboard-link { width: 32px; min-height: 32px; padding: 0; }
   .dashboard-link span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .main-nav { display: none; position: absolute; z-index: 10; top: 55px; left: 16px; right: 16px; margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
   .main-nav.mobile-open { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
