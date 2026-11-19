@@ -1,19 +1,19 @@
 const gameData = window.todaypatchGameData?.aion2 || {};
 const newsItems = Array.isArray(gameData.newsItems) ? gameData.newsItems : [];
-const latestItem = (sourceKey) => newsItems.find((item) => item.sourceKey === sourceKey);
-const taskItems = [
-  { id: "read-latest-notice", title: "최신 공지 확인하기", item: latestItem("notice") },
-  { id: "read-latest-update", title: "최신 업데이트 확인하기", item: latestItem("update") },
-  { id: "read-latest-cm-story", title: "최신 CM 이야기 확인하기", item: latestItem("cm-story") },
-];
-
-const categories = ["전체", "공지", "업데이트", "CM 이야기"];
 const game = { id: "aion2", name: "아이온2", aliases: "aion2 아이온2", icon: "./assets/aion2-logo.png", route: "#/aion2" };
+const categories = ["전체", "공지", "업데이트", "CM 아지트"];
 const gameCatalog = [
   game,
   { id: "dokkaebi-world", name: "도깨비의 세계", icon: "./assets/dokkaebi-world.png", route: "#/game/dokkaebi-world" },
   { id: "temppal", name: "템빨", icon: "./assets/temppal.png", route: "#/game/temppal", upcoming: true },
 ];
+const isAionNewsItem = (item) => (item?.gameId || game.id) === game.id;
+const isAionCmStory = (item) => isAionNewsItem(item)
+  && (item.sourceKey === "cm-story" || item.category === "CM 이야기" || item.category === "CM 아지트");
+const displayNewsCategory = (item) => isAionCmStory(item) ? "CM 아지트" : item.category;
+const displayNewsSource = (item) => isAionCmStory(item)
+  ? String(item.source || "아이온2 공식 CM 아지트").replace(/CM 이야기/g, "CM 아지트")
+  : item.source;
 const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false, discoveryView: "other", tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [] };
 const app = document.querySelector("#app");
 
@@ -74,7 +74,7 @@ function knownNewsByGame() {
 function rememberCurrentGameNews(gameId) {
   if (gameId !== game.id) return;
   const known = knownNewsByGame();
-  known[gameId] = [...new Set([...(Array.isArray(known[gameId]) ? known[gameId] : []), ...newsItems.map((item) => item.id)])].slice(-1000);
+  known[gameId] = [...new Set([...(Array.isArray(known[gameId]) ? known[gameId] : []), ...newsItems.filter(isAionNewsItem).map((item) => item.id)])].slice(-1000);
   writeStorage("todaypatch.knownNewsByGame", known);
 }
 
@@ -101,14 +101,15 @@ function notifyBrowserOfNewPosts(items) {
 function syncFollowedNewsNotifications() {
   if (!followedGameIds().includes(game.id)) return;
   const known = knownNewsByGame();
-  const currentIds = newsItems.map((item) => item.id);
+  const currentItems = newsItems.filter(isAionNewsItem);
+  const currentIds = currentItems.map((item) => item.id);
   if (!Array.isArray(known[game.id])) {
     known[game.id] = [...new Set(currentIds)].slice(-1000);
     writeStorage("todaypatch.knownNewsByGame", known);
     return;
   }
   const knownIds = new Set(known[game.id]);
-  const newPosts = newsItems.filter((item) => !knownIds.has(item.id));
+  const newPosts = currentItems.filter((item) => !knownIds.has(item.id));
   known[game.id] = [...new Set([...known[game.id], ...currentIds])].slice(-1000);
   writeStorage("todaypatch.knownNewsByGame", known);
   if (!newPosts.length) return;
@@ -119,7 +120,7 @@ function syncFollowedNewsNotifications() {
     id: item.id,
     gameId: game.id,
     title: item.title,
-    category: item.category,
+    category: displayNewsCategory(item),
     date: item.date,
     url: item.url,
     createdAt: new Date().toISOString(),
@@ -230,7 +231,7 @@ function detailId() {
 }
 
 function renderNotificationControl() {
-  const notifications = storedNotifications();
+  const notifications = storedNotifications().filter((item) => !/CM 이야기|CM 아지트/u.test(item.category || "") || item.gameId === game.id);
   const unreadCount = notifications.filter((item) => !item.read).length;
   const browserSupported = "Notification" in window;
   const browserPermission = browserSupported ? Notification.permission : "unsupported";
@@ -246,7 +247,8 @@ function renderNotificationControl() {
       const exists = newsItems.some((news) => news.id === newsId);
       const href = exists ? `#/aion2/news/${encodeURIComponent(newsId)}` : item.url;
       const target = exists ? "" : 'target="_blank" rel="noopener noreferrer"';
-      return `<a class="notification-item ${item.read ? "read" : "unread"}" href="${escapeHTML(href)}" ${target} data-action="open-notification" data-id="${escapeHTML(item.id)}"><span class="notification-dot" aria-hidden="true"></span><span class="notification-copy"><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.gameId === game.id ? game.name : item.gameId)} · ${escapeHTML(item.category || "새 소식")} · ${escapeHTML(item.date || "")}</small>${item.body ? `<small>${escapeHTML(item.body)}</small>` : ""}</span></a>`;
+      const notificationCategory = String(item.category || "새 소식").replace(/CM 이야기/g, "CM 아지트");
+      return `<a class="notification-item ${item.read ? "read" : "unread"}" href="${escapeHTML(href)}" ${target} data-action="open-notification" data-id="${escapeHTML(item.id)}"><span class="notification-dot" aria-hidden="true"></span><span class="notification-copy"><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.gameId === game.id ? game.name : item.gameId)} · ${escapeHTML(notificationCategory)} · ${escapeHTML(item.date || "")}</small>${item.body ? `<small>${escapeHTML(item.body)}</small>` : ""}</span></a>`;
     }).join("")}</div>`
     : `<div class="notification-empty"><strong>새 알림이 없습니다.</strong><p>팔로우한 게임의 새 글은 크롤링 후 페이지를 방문하면 여기에 표시됩니다.</p></div>`;
 
@@ -273,11 +275,10 @@ function renderHeader() {
     ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>'
     : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.7 8.7 0 1 0 20.4 15.2Z"/></svg>';
   const links = [
-    ["개요", "#/aion2", "game-home"],
-    ["전체 소식", "#/aion2/news", "news"],
+    ["전체 소식", "#/aion2", "game-home"],
     ["공지", "#/aion2/notices", "notices"],
     ["업데이트", "#/aion2/updates", "updates"],
-    ["CM 이야기", "#/aion2/cm-stories", "cm-stories"],
+    ["CM 아지트", "#/aion2/cm-stories", "cm-stories"],
     ["할 일", "#/aion2/tasks", "tasks"],
     ["북마크", "#/aion2/bookmarks", "bookmarks"],
   ];
@@ -294,7 +295,10 @@ function renderHeader() {
         ${inGame ? `<a class="header-game" href="#/aion2"><span class="header-divider" aria-hidden="true"></span>아이온2</a>
           <button class="mobile-menu-button" data-action="mobile-menu" aria-label="게임 메뉴 열기" aria-expanded="false">☰</button>
           <nav class="main-nav" id="main-nav" aria-label="아이온2 메뉴">
-            ${links.map(([label, href, route]) => `<a class="nav-link ${kind === route || (kind === "detail" && route === activeDetailRoute) ? "active" : ""}" href="${href}" ${kind === route || (kind === "detail" && route === activeDetailRoute) ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
+            ${links.map(([label, href, route]) => {
+              const active = kind === route || (route === "game-home" && kind === "news") || (kind === "detail" && route === activeDetailRoute);
+              return `<a class="nav-link ${active ? "active" : ""}" href="${href}" ${active ? 'aria-current="page"' : ""}>${label}</a>`;
+            }).join("")}
           </nav>` : `<span class="header-caption">${escapeHTML(selectedGame?.name || "게임별 소식을 한곳에서")}</span>`}
         <div class="header-controls ${inGame ? "in-game" : ""}">
           <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
@@ -399,32 +403,8 @@ function renderGameIntro(title, description, crumb = title) {
     <div class="page-heading"><div><span class="page-eyebrow">AION2 GAME HUB</span><h1>${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p></div>${crumb === "아이온2" ? `<span class="data-state"><i></i>최근 수집 · ${escapeHTML(crawledDate)}</span>` : ""}</div>`;
 }
 
-function renderDemoNote() {
-  return `<div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>공식 공지, 업데이트, CM 이야기 게시판에서 수집한 내용입니다. 각 게시물에서 원문 본문을 확인할 수 있습니다.</p></div>`;
-}
-
-function renderQuickLink(label, description, href, icon) {
-  return `<a class="quick-link" href="${href}"><span class="quick-icon" aria-hidden="true">${icon}</span><span class="quick-copy"><strong>${label}</strong><small>${description}</small></span><span class="quick-arrow" aria-hidden="true">→</span></a>`;
-}
-
 function renderGameHome() {
-  const preview = newsItems.slice(0, 3);
-  return `
-    <main class="page-width game-page">
-      ${renderGameIntro("아이온2", "공식 공지, 업데이트, CM 이야기에서 최신 소식을 확인하세요.", "아이온2")}
-      ${renderDemoNote()}
-      <section class="quick-links" aria-label="아이온2 게시판 바로가기">
-        ${renderQuickLink("전체 소식", "세 게시판의 최신 글", "#/aion2/news", "⌕")}
-        ${renderQuickLink("공지", "공식 안내와 공지", "#/aion2/notices", "i")}
-        ${renderQuickLink("업데이트", "패치 노트와 변경점", "#/aion2/updates", "↻")}
-        ${renderQuickLink("CM 이야기", "운영 소식과 주간 뉴스", "#/aion2/cm-stories", "✳")}
-        ${renderQuickLink("오늘 할 일", "최신 게시물 체크리스트", "#/aion2/tasks", "✓")}
-      </section>
-      <section class="content-section preview-section">
-        <div class="section-heading"><div><h2>최근 정보</h2><p>공식 게시판에서 수집한 최신 글과 본문 링크</p></div><a class="section-link" href="#/aion2/news">전체 소식 <span aria-hidden="true">→</span></a></div>
-        ${preview.length ? `<div class="news-list">${preview.map(renderNewsCard).join("")}</div>` : `<div class="empty-state"><strong>수집된 게시물이 없습니다.</strong><p>npm run crawl을 실행해 공식 게시판을 수집해 주세요.</p></div>`}
-      </section>
-    </main>`;
+  return renderFeedPage("news");
 }
 
 function renderCatalogGamePage() {
@@ -447,17 +427,15 @@ function renderFilterBar(kind) {
       <label class="search-field news-search-field">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg>
         <input id="news-search" type="search" value="${escapeHTML(state.query)}" placeholder="제목, 요약, 키워드 검색" autocomplete="off" aria-label="아이온2 정보 검색" />
-        <kbd>검색</kbd>
       </label>
       <div class="filter-row" aria-label="정보 유형 필터">
         ${pageCategories.map((category) => `<button class="filter-chip ${state.filter === category ? "selected" : ""}" data-action="filter" data-filter="${category}" aria-pressed="${state.filter === category}">${category}</button>`).join("")}
-        <button class="clear-filter" data-action="clear-filter">초기화</button>
       </div>
     </div>`;
 }
 
 function categoryClass(category) {
-  return category === "공지" ? "notice" : category === "CM 이야기" ? "cm" : "update";
+  return category === "공지" ? "notice" : category === "CM 아지트" ? "cm" : "update";
 }
 
 function renderNewsCard(item) {
@@ -466,7 +444,7 @@ function renderNewsCard(item) {
   return `
     <article class="news-card ${read ? "is-read" : ""}">
       <a class="news-main" href="#/aion2/news/${encodeURIComponent(item.id)}" aria-label="${escapeHTML(item.title)} 상세 보기">
-        <div class="news-topline"><span class="category-pill category-${categoryClass(item.category)}">${escapeHTML(item.category)}</span><span class="news-source">${escapeHTML(item.source)} · ${escapeHTML(item.date)}</span>${read ? '<span class="read-badge">읽음</span>' : ""}</div>
+        <div class="news-topline"><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><span class="news-source">${escapeHTML(displayNewsSource(item))} · ${escapeHTML(item.date)}</span>${read ? '<span class="read-badge">읽음</span>' : ""}</div>
         <h3>${escapeHTML(item.title)}</h3>
       </a>
       <a class="news-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML(item.title)} 공식 본문 열기">본문 원문 <span aria-hidden="true">↗</span></a>
@@ -477,7 +455,7 @@ function renderNewsCard(item) {
 }
 
 function renderBookmarksPage() {
-  const bookmarks = newsItems.filter((item) => isSaved(item.id));
+  const bookmarks = newsItems.filter((item) => isAionNewsItem(item) && isSaved(item.id));
   return `
     <main class="page-width game-page listing-page bookmarks-page">
       ${renderGameIntro("저장한 북마크", "관심 있는 공지와 업데이트를 모아보세요.", "북마크")}
@@ -722,7 +700,7 @@ function renderUserPost(post) {
 
 function renderDashboardPage() {
   const followed = gameCatalog.filter((item) => isGameFollowed(item.id));
-  const bookmarks = newsItems.filter((item) => isSaved(item.id));
+  const bookmarks = newsItems.filter((item) => isAionNewsItem(item) && isSaved(item.id));
   const posts = userPosts();
   const calendarEvents = dashboardCalendarEvents();
   return `
@@ -758,15 +736,14 @@ function renderDashboardPage() {
 
 function renderFeedPage(kind) {
   const page = {
-    news: ["아이온2 전체 소식", "공지, 업데이트, CM 이야기 게시물을 날짜순으로 확인하세요."],
+    news: ["아이온2 전체 소식", "공지, 업데이트, CM 아지트 게시물을 날짜순으로 확인하세요."],
     notices: ["아이온2 공식 공지", "공식 안내와 서비스 공지를 원문 링크와 함께 확인하세요."],
     updates: ["아이온2 업데이트", "최신 패치 노트와 업데이트 본문을 확인하세요."],
-    "cm-stories": ["아이온2 CM 이야기", "주간 업데이트 뉴스와 운영 소식을 확인하세요."],
+    "cm-stories": ["아이온2 CM 아지트", "아이온2 CM 아지트의 소식과 운영 안내를 확인하세요."],
   }[kind];
   return `
     <main class="page-width game-page listing-page">
       ${renderGameIntro(page[0], page[1], page[0])}
-      ${renderDemoNote()}
       <section class="content-section feed-section">
         ${renderFilterBar(kind)}
         <div class="section-heading list-heading"><div><h2>${page[0]}</h2><p>검색 결과 <span id="news-count"></span></p></div></div>
@@ -776,35 +753,111 @@ function renderFeedPage(kind) {
     </main>`;
 }
 
+function taskEvidenceLines(item) {
+  return [
+    ...(Array.isArray(item.keyPoints) ? item.keyPoints : []),
+    ...(Array.isArray(item.sections) ? item.sections.flatMap((section) => [
+      ...(Array.isArray(section.importantDetails) ? section.importantDetails : []),
+      section.summary,
+    ]) : []),
+    item.summary,
+    item.analysis,
+    item.excerpt,
+    item.title,
+  ].filter((line) => typeof line === "string" && line.trim());
+}
+
+const patchTaskRules = [
+  { id: "coupon", match: /쿠폰\s*(코드|번호)?|쿠폰코드/u, evidence: /쿠폰|코드|사용 기간|만료/u, title: "쿠폰을 등록하고 보상 기한 확인하기", priority: 1, topics: /쿠폰|보상|사용|만료/u },
+  { id: "server-transfer", match: /서버\s*이전|이전\s*신청/u, evidence: /서버\s*이전|이전\s*신청|정산/u, title: "서버 이전 일정과 정산 조건 확인하기", priority: 1, topics: /서버\s*이전|이전\s*신청|정산/u },
+  { id: "event", match: /이벤트|PC\s*방|출석/u, evidence: /이벤트|PC\s*방|출석|참여 조건/u, title: "이벤트 참여 조건을 확인하고 보상 챙기기", priority: 2, topics: /이벤트|PC\s*방|출석|보상/u },
+  { id: "season", match: /시즌|시즌\s*미션/u, evidence: /시즌|미션|종료|보상/u, title: "시즌 종료 전 미션과 보상 점검하기", priority: 2, topics: /시즌|미션|종료|보상/u },
+  { id: "class", match: /직업|클래스|스킬|밸런스/u, evidence: /직업|클래스|스킬|밸런스|피해량/u, title: "직업 변경 내용을 확인하고 스킬 세팅 점검하기", priority: 3, topics: /직업|클래스|스킬|밸런스/u },
+  { id: "policy", match: /계정당|각인|이동 불가|수령 캐릭터/u, evidence: /계정당|각인|이동 불가|수령 캐릭터/u, title: "보상 대상과 아이템 제한 조건 확인하기", priority: 3, topics: /계정당|각인|이동 불가|수령 캐릭터/u },
+  { id: "update", match: /업데이트|패치|변경/u, evidence: /업데이트|패치|변경|추가|조정|개선/u, title: "업데이트 변경 사항을 확인하고 필요한 설정 점검하기", priority: 4, topics: /업데이트|패치|변경|추가|조정|개선/u, sourceKey: "update" },
+];
+
+function taskDueDate(item, rule, evidence) {
+  const eventPattern = rule.id === "coupon" || rule.id === "policy" ? /쿠폰|보상|만료|수령|정책/u
+    : rule.id === "server-transfer" ? /서버\s*이전|이전\s*신청|정산/u
+      : rule.id === "season" ? /시즌|미션/u
+        : rule.id === "event" ? /이벤트|PC\s*방|출석/u : rule.topics;
+  const events = [
+    ...(Array.isArray(item.events) ? item.events.map((event, index) => normalizeArticleEvent(event, item, index)).filter(Boolean) : []),
+    ...legacyCalendarEvents(item),
+  ];
+  const matchingEvent = events.find((event) => eventPattern.test(`${event.title || ""} ${event.details || ""} ${(event.conditions || []).join(" ")}`)
+    && (event.deadlineAt || event.endAt || event.startAt));
+  if (matchingEvent?.deadlineAt) return { value: normalizeCalendarDate(matchingEvent.deadlineAt), label: "마감" };
+  if (matchingEvent?.endAt) return { value: normalizeCalendarDate(matchingEvent.endAt), label: "종료" };
+  if (matchingEvent?.startAt) return { value: normalizeCalendarDate(matchingEvent.startAt), label: "시작" };
+
+  const datedLine = evidence.find((line) => rule.topics.test(line) && /기간|기한|마감|종료|만료|까지/u.test(line));
+  const dates = parseExplicitDates(datedLine || "", item.date);
+  return dates.length ? { value: dates.at(-1).value, label: /마감|종료|만료|까지/u.test(datedLine) ? "기한" : "일정" } : { value: "", label: "" };
+}
+
+function buildPatchTaskRecommendations() {
+  const items = [...newsItems].filter(isAionNewsItem).sort((left, right) => String(right.postedAt || "").localeCompare(String(left.postedAt || "")));
+  const candidates = [];
+  for (const item of items) {
+    const lines = taskEvidenceLines(item);
+    const fullText = `${item.title || ""} ${item.summary || ""} ${item.analysis || ""} ${lines.join(" ")}`;
+    for (const rule of patchTaskRules) {
+      if (rule.sourceKey && item.sourceKey !== rule.sourceKey) continue;
+      if (!rule.match.test(fullText)) continue;
+      const evidence = lines.find((line) => rule.evidence.test(line)) || item.summary || item.title;
+      const due = taskDueDate(item, rule, lines);
+      const dueAt = due.value;
+      if (dueAt && calendarDaysUntil(dueAt) < 0) continue;
+      candidates.push({
+        id: `recommend-${item.id}-${rule.id}`,
+        title: rule.title,
+        evidence,
+        item,
+        dueAt,
+        dueLabel: due.label,
+        priority: rule.priority,
+        priorityLabel: dueAt ? "기한 확인" : rule.priority <= 2 ? "먼저 확인" : "패치 점검",
+      });
+    }
+  }
+  return candidates.sort((left, right) => {
+    if (left.dueAt && right.dueAt && left.dueAt !== right.dueAt) return left.dueAt.localeCompare(right.dueAt);
+    if (left.dueAt !== right.dueAt) return left.dueAt ? -1 : 1;
+    return left.priority - right.priority || String(right.item.postedAt || "").localeCompare(String(left.item.postedAt || ""));
+  }).slice(0, 12);
+}
+
 function renderTask(task, checked) {
-  const linkedItem = task.item;
+  const due = task.dueAt ? `${task.dueLabel} · ${formatDisplayDate(task.dueAt)}` : task.priorityLabel;
   return `
     <div class="task-row ${checked ? "completed" : ""}">
-      <button class="task-check" data-action="toggle-task" data-id="${task.id}" aria-label="${checked ? "완료 취소" : "완료 표시"}" aria-pressed="${Boolean(checked)}">${checked ? "✓" : ""}</button>
-      <div class="task-copy"><strong>${escapeHTML(task.title)}</strong>${linkedItem ? `<a href="#/aion2/news/${encodeURIComponent(linkedItem.id)}">${escapeHTML(linkedItem.title)}</a>` : `<span>크롤링 후 최신 게시물이 표시됩니다.</span>`}</div>
-      <span class="task-due">${escapeHTML(linkedItem?.date || "수집 대기")}</span>
+      <button class="task-check" data-action="toggle-task" data-id="${escapeHTML(task.id)}" aria-label="${checked ? "완료 취소" : "완료 표시"}" aria-pressed="${Boolean(checked)}">${checked ? "✓" : ""}</button>
+      <div class="task-copy"><div class="task-title-line"><strong>${escapeHTML(task.title)}</strong><span class="task-suggestion-tag">추천</span></div><p class="task-evidence">게시물 근거: ${escapeHTML(task.evidence)}</p><a href="#/aion2/news/${encodeURIComponent(task.item.id)}">근거 ${escapeHTML(displayNewsCategory(task.item))} · ${escapeHTML(task.item.title)}</a></div>
+      <span class="task-due">${escapeHTML(due)}</span>
     </div>`;
 }
 
 function renderTasksPage() {
   const checked = savedTasks();
+  const taskItems = buildPatchTaskRecommendations();
   const count = taskItems.filter((task) => checked[task.id]).length;
   return `
     <main class="page-width game-page listing-page tasks-page">
-      ${renderGameIntro("패치 후 할 일", "최신 공지, 업데이트, CM 이야기를 확인 완료로 표시하세요.", "할 일")}
-      <div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>각 게시판에서 수집한 최신 게시물을 열고 확인 완료를 표시하세요.</p></div>
+      ${renderGameIntro("패치 후 할 일", "크롤링된 공지의 핵심 정보에서 먼저 할 일을 추천합니다.", "할 일")}
       <section class="task-panel">
-        <div class="task-panel-heading"><div><span class="page-eyebrow">LATEST POSTS</span><h2>수집 게시물 체크리스트</h2></div><span class="task-progress">${count} / ${taskItems.length} 완료</span></div>
-        <p class="section-description">완료 상태는 이 브라우저에 저장됩니다. 크롤링 후 최신 게시물 링크가 자동으로 바뀝니다.</p>
-        <div class="task-list">${taskItems.map((task) => renderTask(task, checked[task.id])).join("")}</div>
-        <div class="task-legend"><span><i class="legend-official"></i>공식 게시판에서 수집</span></div>
+        <div class="task-panel-heading"><div><span class="page-eyebrow">PATCH ACTIONS</span><h2>패치 후 추천 할 일</h2></div><span class="task-progress">${count} / ${taskItems.length} 완료</span></div>
+        <p class="section-description">요약·분석과 중요 항목에서 쿠폰, 신청 기간, 이벤트 조건, 직업 변경 단서를 찾아 우선순위를 정합니다. 추천 근거와 원문을 확인한 뒤 체크해 보세요.</p>
+        ${taskItems.length ? `<div class="task-list">${taskItems.map((task) => renderTask(task, checked[task.id])).join("")}</div>` : `<div class="task-empty"><strong>추천할 할 일이 아직 없습니다.</strong><p>다음 크롤링에서 실행할 내용이 있는 공지를 수집하면 이곳에 표시됩니다.</p></div>`}
+        <div class="task-legend"><span><i class="legend-suggestion"></i>게시물에서 추정한 추천</span><span><i class="legend-official"></i>원문 근거 연결</span></div>
       </section>
     </main>`;
 }
 
 function renderDetail(id) {
   const item = newsItems.find((news) => news.id === id);
-  if (!item) return `<main class="page-width not-found"><h1>정보를 찾을 수 없어요.</h1><a class="primary-button" href="#/aion2/updates">아이온2 정보로 돌아가기</a></main>`;
+  if (!item || !isAionNewsItem(item) || ((item.sourceKey === "cm-story" || item.category === "CM 이야기" || item.category === "CM 아지트") && !isAionCmStory(item))) return `<main class="page-width not-found"><h1>정보를 찾을 수 없어요.</h1><a class="primary-button" href="#/aion2">아이온2 정보로 돌아가기</a></main>`;
   const bookmarked = isSaved(item.id);
   const summary = item.summary || item.excerpt || "요약 정보를 준비하지 못했습니다. 공식 원문을 확인해 주세요.";
   const analysis = item.analysis || "분석 정보가 없습니다. 아래 공식 원문에서 자세한 내용을 확인해 주세요.";
@@ -822,12 +875,12 @@ function renderDetail(id) {
       ${renderGameIntro("게시물 상세", "AI가 핵심 내용을 정리하고 분석한 결과를 확인하세요.", "게시물 상세")}
       <div class="detail-layout">
         <article class="detail-main">
-          <div class="detail-title-row"><div><span class="category-pill category-${categoryClass(item.category)}">${escapeHTML(item.category)}</span><h1>${escapeHTML(item.title)}</h1></div><button class="bookmark-button detail-bookmark ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg></button></div>
+          <div class="detail-title-row"><div><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><h1>${escapeHTML(item.title)}</h1></div><button class="bookmark-button detail-bookmark ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg></button></div>
           <section class="article-panel summary-panel"><div class="panel-heading"><h2>전체 내용 요약</h2><span class="summary-badge">전체 흐름</span></div><p class="summary-copy">${renderSentenceLines(summary)}</p></section>
           <section class="article-panel analysis-panel"><div class="panel-heading"><h2>AI 분석</h2><span class="example-label">이용자 관점</span></div><p class="analysis-copy">${renderSentenceLines(analysis)}</p>${detailedSections}<a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 링크 열기 <span aria-hidden="true">↗</span></a></section>
-          <section class="article-panel"><div class="panel-heading"><h2>수집 정보</h2><span class="example-label">공식 게시판</span></div><dl class="info-list"><div><dt>게시판</dt><dd>${escapeHTML(item.source)}</dd></div><div><dt>게시일</dt><dd>${escapeHTML(item.date)}</dd></div><div><dt>수정일</dt><dd>${item.updatedAt ? escapeHTML(formatDisplayDate(item.updatedAt)) : "수정 기록 없음"}</dd></div></dl></section>
+          <section class="article-panel"><div class="panel-heading"><h2>수집 정보</h2><span class="example-label">공식 게시판</span></div><dl class="info-list"><div><dt>게시판</dt><dd>${escapeHTML(displayNewsSource(item))}</dd></div><div><dt>게시일</dt><dd>${escapeHTML(item.date)}</dd></div><div><dt>수정일</dt><dd>${item.updatedAt ? escapeHTML(formatDisplayDate(item.updatedAt)) : "수정 기록 없음"}</dd></div></dl></section>
           <section class="article-panel action-panel"><div><strong>정보가 정확하지 않나요?</strong><p>날짜, 수치, 직업 정보나 출처 문제를 알려주세요.</p></div><button class="secondary-button" data-action="report">정보 신고</button></section>
-          <a class="back-link" href="#/aion2/${sourceRoute}">← ${escapeHTML(item.category)} 목록</a>
+          <a class="back-link" href="#/aion2/${sourceRoute}">← ${escapeHTML(displayNewsCategory(item))} 목록</a>
         </article>
         <aside class="detail-side"><section class="source-panel"><span class="page-eyebrow">OFFICIAL SOURCE</span><h2>공식 게시물</h2><p>${escapeHTML(item.source)}에서 수집한 내용을 요약했습니다. 정확한 조건과 상세 내용은 원문에서 확인해 주세요.</p><div class="source-status-list"><div><span>게시일</span><strong>${escapeHTML(item.date)}</strong></div><div><span>표시 내용</span><strong>요약 · 분석</strong></div></div><a class="secondary-button full-width" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 열기 <span aria-hidden="true">↗</span></a></section></aside>
       </div>
@@ -857,7 +910,7 @@ function normalizeChatText(value) {
 function chatKnowledgeLines(item) {
   const lines = [
     { text: item.title, kind: "title", weight: 1.2 },
-    { text: `${item.category || ""} ${item.source || ""}`, kind: "category", weight: .8 },
+    { text: `${displayNewsCategory(item) || ""} ${displayNewsSource(item) || ""}`, kind: "category", weight: .8 },
     { text: item.summary, kind: "summary", weight: 1 },
     { text: item.analysis, kind: "analysis", weight: .85 },
     { text: item.excerpt, kind: "summary", weight: .65 },
@@ -974,7 +1027,7 @@ function analyzeChatQuestion(question, previousQuestion = "") {
     change: has(/바뀌|달라|변경|패치|추가|수정|조정|개선|신규|좋아졌|강화/),
     notice: has(/공지|안내/),
     update: has(/업데이트|패치노트/),
-    cmStory: has(/cm이야기|운영소식/),
+    cmStory: has(/cm아지트|cm이야기|운영소식/),
   };
 
   if (has(/쿠폰|쿠폰코드|코드|쿠폰번호/)) appendAliases(["쿠폰", "등록", "코드", "사용기간", "만료", "보상"]);
@@ -992,7 +1045,7 @@ function analyzeChatQuestion(question, previousQuestion = "") {
 }
 
 function buildChatTermWeights(query) {
-  const corpus = newsItems.map((item) => normalizeChatText(chatKnowledgeLines(item).map((line) => line.text).join(" ")));
+  const corpus = newsItems.filter(isAionNewsItem).map((item) => normalizeChatText(chatKnowledgeLines(item).map((line) => line.text).join(" ")));
   const terms = [...new Set([...query.primaryTerms, ...query.expandedTerms])];
   return new Map(terms.map((term) => {
     const documentFrequency = corpus.reduce((count, document) => count + Number(document.includes(term)), 0);
@@ -1036,7 +1089,7 @@ function answerNoticeQuestion(question, previousQuestion = "") {
   };
 
   const termWeights = buildChatTermWeights(query);
-  const ranked = newsItems.map((item) => {
+  const ranked = newsItems.filter(isAionNewsItem).map((item) => {
     const lines = chatKnowledgeLines(item).map((line) => scoreChatEvidence(line, query, termWeights)).filter((line) => line.score > 0);
     const evidence = [...lines].sort((left, right) => right.score - left.score);
     const uniqueMatches = new Set(lines.flatMap((line) => line.primaryHits));
@@ -1048,7 +1101,7 @@ function answerNoticeQuestion(question, previousQuestion = "") {
       + uniqueMatches.size * .7;
     const categoryBoost = (query.intents.notice && item.category === "공지")
       || (query.intents.update && item.category === "업데이트")
-      || (query.intents.cmStory && item.category === "CM 이야기") ? 1.8 : 0;
+      || (query.intents.cmStory && displayNewsCategory(item) === "CM 아지트" && isAionCmStory(item)) ? 1.8 : 0;
     return { item, evidence, score: score + categoryBoost, matchedTerms: uniqueMatches.size };
   }).filter((result) => result.score > 0).sort((left, right) => right.score - left.score);
 
@@ -1102,7 +1155,7 @@ function renderChatbot() {
 
 const tutorialSteps = [
   { title: "게임을 찾아 팔로우하세요", body: "검색창에서 게임을 찾거나 오른쪽 게임 둘러보기에서 아이콘을 선택하세요. 아이콘을 누르면 게임 페이지로 이동하고, 둘러보기 목록은 우클릭하거나 길게 눌러 팔로우할 수 있어요.", tip: "내 게임 아이콘을 우클릭하거나 길게 누르면 팔로우를 해제할 수 있습니다." },
-  { title: "새 소식을 확인하세요", body: "아이온2 페이지의 공지, 업데이트, CM 이야기에서 최신 글을 확인할 수 있어요. 게시글을 열면 AI 요약과 항목별 분석, 공식 원문 링크가 표시됩니다.", tip: "읽은 글은 목록에서 읽음 표시로 구분됩니다." },
+  { title: "새 소식을 확인하세요", body: "아이온2의 공지, 업데이트, CM 아지트에서 최신 글을 확인할 수 있어요. 게시글을 열면 AI 요약과 항목별 분석, 공식 원문 링크가 표시됩니다.", tip: "읽은 글은 목록에서 읽음 표시로 구분됩니다." },
   { title: "북마크와 게임을 관리하세요", body: "게시글은 북마크로 저장하고, 대시보드에서 팔로우한 게임과 저장한 글을 관리하세요. 팔로우한 게임에 새 글이 올라오면 알림 메뉴에서 확인할 수 있어요.", tip: "대시보드에서 팔로우한 게임의 이벤트와 보상 마감 일정도 확인할 수 있습니다." },
 ];
 
@@ -1150,14 +1203,14 @@ function renderFooter() {
 }
 
 function visibleNews() {
-  let items = [...newsItems];
+  let items = newsItems.filter(isAionNewsItem);
   const kind = routeKind();
   if (kind === "notices") items = items.filter((item) => item.sourceKey === "notice");
   if (kind === "updates") items = items.filter((item) => item.sourceKey === "update");
-  if (kind === "cm-stories") items = items.filter((item) => item.sourceKey === "cm-story");
-  if (state.filter !== "전체") items = items.filter((item) => item.category === state.filter);
+  if (kind === "cm-stories") items = items.filter(isAionCmStory);
+  if (state.filter !== "전체") items = items.filter((item) => displayNewsCategory(item) === state.filter);
   const query = state.query.trim().toLocaleLowerCase("ko-KR");
-  if (query) items = items.filter((item) => `${item.title} ${item.excerpt} ${item.summary || ""} ${item.analysis || ""} ${(item.keyPoints || []).join(" ")} ${item.category} ${item.meta}`.toLocaleLowerCase("ko-KR").includes(query));
+  if (query) items = items.filter((item) => `${item.title} ${item.excerpt} ${item.summary || ""} ${item.analysis || ""} ${(item.keyPoints || []).join(" ")} ${displayNewsCategory(item)} ${displayNewsSource(item)} ${item.meta}`.toLocaleLowerCase("ko-KR").includes(query));
   return items;
 }
 
@@ -1304,11 +1357,6 @@ app.addEventListener("click", (event) => {
       chip.setAttribute("aria-pressed", String(selected));
     });
     drawNewsList();
-  }
-  if (action === "clear-filter") {
-    state.filter = "전체";
-    state.query = "";
-    render();
   }
   if (action === "record-game-search") rememberGameSearch(state.gameQuery);
   if (action === "clear-search-history") {

@@ -29,8 +29,8 @@ const boards = [
   {
     key: "cm-story",
     alias: "cm_story_ko",
-    category: "CM 이야기",
-    source: "아이온2 공식 CM 이야기",
+    category: "CM 아지트",
+    source: "아이온2 공식 CM 아지트",
     pageUrl: "https://aion2.plaync.com/ko-kr/board/cm_story/list",
     viewPath: "cm_story",
   },
@@ -470,7 +470,7 @@ async function main() {
   };
   const generatedData = `window.todaypatchGameData = ${JSON.stringify(output, null, 2)};\n`;
   await fs.writeFile(dataPath, generatedData, "utf8");
-  console.log(`아이온2 크롤링 및 AI 분석 완료: 공지 ${newsItems.filter((item) => item.sourceKey === "notice").length}건, 업데이트 ${newsItems.filter((item) => item.sourceKey === "update").length}건, CM 이야기 ${newsItems.filter((item) => item.sourceKey === "cm-story").length}건`);
+  console.log(`아이온2 크롤링 및 AI 분석 완료: 공지 ${newsItems.filter((item) => item.sourceKey === "notice").length}건, 업데이트 ${newsItems.filter((item) => item.sourceKey === "update").length}건, CM 아지트 ${newsItems.filter((item) => item.sourceKey === "cm-story").length}건`);
   console.log(`기준일: ${sinceDate} · 최근 패치 날짜: ${latestPatch?.date || "기준일 이후 업데이트 노트 없음"}`);
 }
 
