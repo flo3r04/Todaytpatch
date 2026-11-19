@@ -5,7 +5,7 @@ const categories = ["전체", "공지", "업데이트", "CM 아지트"];
 const gameCatalog = [
   game,
   { id: "dokkaebi-world", name: "도깨비의 세계", icon: "./assets/dokkaebi-world.png", route: "#/game/dokkaebi-world" },
-  { id: "temppal", name: "템빨", icon: "./assets/temppal.png", route: "#/game/temppal", upcoming: true },
+  { id: "temppal", name: "템빨", displayTitle: "템빨: 오버기어드", icon: "./assets/temppal.png", route: "#/game/temppal", upcoming: true, releaseDate: "2026-11-26T00:00:00+09:00" },
 ];
 const isAionNewsItem = (item) => (item?.gameId || game.id) === game.id;
 const isAionCmStory = (item) => isAionNewsItem(item)
@@ -14,8 +14,9 @@ const displayNewsCategory = (item) => isAionCmStory(item) ? "CM 아지트" : ite
 const displayNewsSource = (item) => isAionCmStory(item)
   ? String(item.source || "아이온2 공식 CM 아지트").replace(/CM 이야기/g, "CM 아지트")
   : item.source;
-const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false, discoveryView: "other", tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [] };
+const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false, tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [] };
 const app = document.querySelector("#app");
+let releaseCountdownTimer = null;
 
 function readStorage(key, fallback) {
   try {
@@ -321,54 +322,134 @@ function renderHome() {
         </label>
         <div class="game-results" id="game-results" aria-live="polite"></div>
       </section>
-      ${renderFollowedGames()}
+      ${renderFollowedGameShortcuts()}
+      <section class="home-content-grid" aria-label="팔로우한 게임 소식과 공략">
+        ${renderFollowedNewsPanel()}
+        <div class="home-right-stack">
+          ${renderUpcomingReleases()}
+          ${renderPopularGuides()}
+        </div>
+      </section>
     </main>`;
 }
 
-function renderFollowedGames() {
+function renderFollowedGameShortcuts() {
   const followedGames = gameCatalog.filter((item) => isGameFollowed(item.id));
-  const otherGames = gameCatalog.filter((item) => !item.upcoming && !isGameFollowed(item.id));
-  const upcomingGames = gameCatalog.filter((item) => item.upcoming && !isGameFollowed(item.id));
-  const activeDiscovery = state.discoveryView === "upcoming"
-    ? { title: "곧 출시하는 게임", items: upcomingGames, empty: "현재 출시 예정 게임이 없습니다." }
-    : { title: "다른 게임", items: otherGames, empty: "팔로우할 게임이 없습니다." };
-  return `
-    <section class="home-following" aria-labelledby="home-following-title">
-      <div class="home-following-heading"><div><span class="home-guide-eyebrow">YOUR GAMES</span><h2 id="home-following-title">팔로우한 게임</h2></div></div>
-      <div class="home-following-layout">
-        <section class="home-game-panel followed-panel" aria-label="내가 팔로우한 게임">
-          <div class="home-game-panel-heading"><h3>내 게임</h3><span>${followedGames.length}개</span></div>
-          <div class="discovery-tabs followed-tabs" aria-label="팔로우 게임 종류"><span class="discovery-tab active" aria-current="true">팔로우 중</span></div>
-          <div class="game-list-box followed-list-box" aria-label="팔로우한 게임 목록">
-            ${followedGames.length ? `<div class="followed-game-grid">${followedGames.map((item) => renderGameTile(item, "remove")).join("")}</div>` : `<div class="game-list-empty"><span class="following-empty-icon" aria-hidden="true">＋</span><p><strong>아직 팔로우한 게임이 없어요.</strong><br />오른쪽 게임 목록에서 추가해 보세요.</p></div>`}
-          </div>
-        </section>
-        <section class="home-game-panel discover-panel" aria-label="팔로우할 게임과 출시 예정 게임">
-          <div class="home-game-panel-heading"><h3>게임 둘러보기</h3></div>
-          <div class="discovery-tabs" role="tablist" aria-label="둘러볼 게임 종류">
-            <button type="button" role="tab" aria-selected="${state.discoveryView === "other"}" class="discovery-tab ${state.discoveryView === "other" ? "active" : ""}" data-action="select-discovery-view" data-view="other">다른 게임</button>
-            <button type="button" role="tab" aria-selected="${state.discoveryView === "upcoming"}" class="discovery-tab ${state.discoveryView === "upcoming" ? "active" : ""}" data-action="select-discovery-view" data-view="upcoming">곧 출시하는 게임</button>
-          </div>
-          <div class="discovery-content" role="tabpanel" aria-live="polite" aria-label="${activeDiscovery.title}">
-            <div class="game-list-box discovery-list-box">${renderGameDiscoveryList(activeDiscovery.items, activeDiscovery.empty)}</div>
-          </div>
-        </section>
-      </div>
-    </section>`;
+  return `<section class="home-shortcuts" aria-label="팔로우한 게임 바로가기"><div class="home-game-shortcuts">${followedGames.length
+    ? followedGames.map((item) => `<a class="home-game-shortcut" href="${escapeHTML(item.route)}" data-game-menu="remove" data-game-id="${escapeHTML(item.id)}" title="${escapeHTML(item.name)} 열기 · 우클릭 또는 길게 눌러 팔로우 해제"><span class="home-game-shortcut-icon"><img src="${escapeHTML(item.icon)}" alt="" /></span><span>${escapeHTML(item.name)}</span></a>`).join("")
+    : `<p class="home-shortcut-empty">게임을 팔로우하면 아이콘이 여기에 표시됩니다.</p>`}</div></section>`;
+}
+
+function followedNewsItems() {
+  const followed = new Set(followedGameIds());
+  return newsItems.filter((item) => followed.has(item.gameId || game.id))
+    .sort((left, right) => String(right.postedAt || "").localeCompare(String(left.postedAt || "")));
+}
+
+function renderFollowedNewsPanel() {
+  const posts = followedNewsItems().slice(0, 6);
+  const emptyMessage = followedGameIds().length
+    ? "팔로우한 게임의 새 게시글을 크롤링하면 이곳에 모아 보여드릴게요."
+    : "게임을 팔로우하면 해당 게임의 새 게시글을 여기서 확인할 수 있어요.";
+  return `<section class="home-content-panel home-followed-news" aria-labelledby="followed-news-heading"><div class="home-panel-heading"><div><span class="home-guide-eyebrow">FOLLOWED GAMES</span><h2 id="followed-news-heading">팔로우한 게임 게시글</h2></div><span>${posts.length}건</span></div>${posts.length
+    ? `<div class="home-post-list">${posts.map((item) => `<a class="home-post-row" href="#/aion2/news/${encodeURIComponent(item.id)}" data-action="record-article-view" data-id="${escapeHTML(item.id)}"><div class="home-post-meta"><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><span>${escapeHTML(item.date || "")}</span></div><strong>${escapeHTML(item.title)}</strong><span class="home-post-game">${escapeHTML(gameCatalog.find((entry) => entry.id === (item.gameId || game.id))?.name || game.name)} · 게시물 보기 →</span></a>`).join("")}</div>`
+    : `<div class="home-section-empty"><strong>새 글이 아직 없어요.</strong><p>${escapeHTML(emptyMessage)}</p></div>`}</section>`;
+}
+
+function releaseCountdownParts(releaseDate, now = Date.now()) {
+  let seconds = Math.max(0, Math.floor((new Date(releaseDate).getTime() - now) / 1000));
+  const days = Math.floor(seconds / 86400);
+  seconds -= days * 86400;
+  const hours = Math.floor(seconds / 3600);
+  seconds -= hours * 3600;
+  const minutes = Math.floor(seconds / 60);
+  seconds -= minutes * 60;
+  return { days, hours, minutes, seconds };
+}
+
+function releaseDateLabel(releaseDate) {
+  const date = new Date(releaseDate);
+  if (Number.isNaN(date.getTime())) return "일정 확인 중";
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  return `${parts.find((part) => part.type === "month")?.value}.${parts.find((part) => part.type === "day")?.value}`;
+}
+
+function renderReleaseCountdown(item) {
+  const parts = releaseCountdownParts(item.releaseDate);
+  const units = [["days", "Days"], ["hours", "Hours"], ["minutes", "Min"], ["seconds", "Sec"]];
+  return `<div class="release-countdown" data-release-countdown data-release-at="${escapeHTML(item.releaseDate)}" aria-live="off">${units.map(([key, label], index) => `${index ? '<span class="release-countdown-separator" aria-hidden="true">:</span>' : ""}<span class="release-countdown-unit"><strong data-countdown-part="${key}">${String(parts[key]).padStart(2, "0")}</strong><small>${label}</small></span>`).join("")}</div>`;
+}
+
+function renderUpcomingReleases() {
+  const now = Date.now();
+  const upcoming = gameCatalog.filter((item) => item.upcoming && item.releaseDate && new Date(item.releaseDate).getTime() > now)
+    .sort((left, right) => new Date(left.releaseDate) - new Date(right.releaseDate));
+  if (!upcoming.length) return "";
+  const featured = upcoming[0];
+  return `<section class="home-content-panel home-release-panel" aria-labelledby="release-panel-heading"><div class="home-panel-heading"><div><span class="home-guide-eyebrow">COMING SOON</span><h2 id="release-panel-heading">출시 카운트다운</h2></div><span>${upcoming.length}개</span></div><a class="release-featured" href="${escapeHTML(featured.route)}" aria-label="${escapeHTML(featured.displayTitle || featured.name)} 게임 정보 열기"><img src="${escapeHTML(featured.icon)}" alt="" /><span class="release-featured-copy"><span class="release-date-label"><strong>출시</strong><time>${escapeHTML(releaseDateLabel(featured.releaseDate))}</time></span><strong class="release-game-title">${escapeHTML(featured.displayTitle || featured.name)}</strong><span class="release-clock-label"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>출시까지 남은 시간</span>${renderReleaseCountdown(featured)}</span></a>${upcoming.length > 1 ? `<div class="release-upcoming-list">${upcoming.slice(1).map((item) => `<a href="${escapeHTML(item.route)}"><span class="release-list-tag">출시</span><strong>${escapeHTML(item.displayTitle || item.name)}</strong><time>${escapeHTML(releaseDateLabel(item.releaseDate))}</time></a>`).join("")}</div>` : ""}</section>`;
+}
+
+function popularGuideEntries() {
+  const guideHeadingPattern = /공략|가이드|방법|경로|설정|세팅|스킬|직업|성장|육성/u;
+  const storedCounts = readStorage("todaypatch.articleViews", {});
+  const viewCounts = storedCounts && typeof storedCounts === "object" && !Array.isArray(storedCounts) ? storedCounts : {};
+  const entries = [];
+  for (const item of newsItems.filter(isAionNewsItem)) {
+    const sections = Array.isArray(item.sections) ? item.sections : [];
+    const usefulSections = sections.filter((section) => {
+      if (!section || typeof section !== "object") return false;
+      const details = Array.isArray(section.importantDetails) ? section.importantDetails : [];
+      return guideHeadingPattern.test(`${section.heading || ""} ${section.summary || ""} ${details.join(" ")}`);
+    });
+    const guideSection = usefulSections.sort((left, right) => {
+      const relevance = (section) => {
+        const details = Array.isArray(section.importantDetails) ? section.importantDetails : [];
+        return (`${section.heading || ""} ${section.summary || ""} ${details.join(" ")}`.match(/공략|가이드|방법|스킬|세팅|경로/gu) || []).length;
+      };
+      return relevance(right) - relevance(left);
+    })[0];
+    const isGuidePost = /공략|가이드/u.test(`${item.title || ""} ${item.category || ""}`);
+    if (!guideSection && !isGuidePost) continue;
+    const details = Array.isArray(guideSection?.importantDetails) ? guideSection.importantDetails : [];
+    const keywords = `${guideSection?.heading || ""} ${guideSection?.summary || ""} ${details.join(" ")}`;
+    const viewScore = Math.min(20, Number(viewCounts[item.id]) || 0) * 2;
+    entries.push({
+      item,
+      title: guideSection?.heading || item.title,
+      description: guideSection?.summary || details[0] || item.summary || item.excerpt || "",
+      score: viewScore + Number(isSaved(item.id)) * 4 + Number(isRead(item.id)) + (keywords.match(/방법|공략|가이드|스킬|세팅|경로/gu) || []).length,
+    });
+  }
+  return entries.sort((left, right) => right.score - left.score || String(right.item.postedAt || "").localeCompare(String(left.item.postedAt || ""))).slice(0, 5);
+}
+
+function renderPopularGuides() {
+  const entries = popularGuideEntries();
+  return `<section class="home-content-panel home-guides-panel" aria-labelledby="popular-guides-heading"><div class="home-panel-heading"><div><span class="home-guide-eyebrow">POPULAR GUIDES</span><h2 id="popular-guides-heading">인기 공략글</h2></div><span>열람·저장·내용 관련도</span></div>${entries.length
+    ? `<div class="home-guide-list">${entries.map((entry) => `<a class="home-guide-row" href="#/aion2/news/${encodeURIComponent(entry.item.id)}" data-action="record-article-view" data-id="${escapeHTML(entry.item.id)}"><span class="home-guide-category">${escapeHTML(displayNewsCategory(entry.item))} · ${escapeHTML(entry.item.date || "")}</span><strong>${escapeHTML(entry.title)}</strong><p>${escapeHTML(entry.description)}</p><small>${escapeHTML(entry.item.title)}</small></a>`).join("")}</div>`
+    : `<div class="home-section-empty"><strong>공략 정보를 준비 중이에요.</strong><p>크롤링된 게시물에서 방법·스킬·세팅 관련 정보가 수집되면 여기에 표시됩니다.</p></div>`}</section>`;
+}
+
+function updateReleaseCountdowns() {
+  app.querySelectorAll("[data-release-countdown]").forEach((element) => {
+    const parts = releaseCountdownParts(element.dataset.releaseAt);
+    for (const [key, value] of Object.entries(parts)) {
+      const target = element.querySelector(`[data-countdown-part="${key}"]`);
+      if (target) target.textContent = String(value).padStart(2, "0");
+    }
+  });
+}
+
+function startReleaseCountdowns() {
+  if (releaseCountdownTimer) window.clearInterval(releaseCountdownTimer);
+  releaseCountdownTimer = null;
+  if (!app.querySelector("[data-release-countdown]")) return;
+  updateReleaseCountdowns();
+  releaseCountdownTimer = window.setInterval(updateReleaseCountdowns, 1000);
 }
 
 function closeFollowContextMenu() {
   app.querySelector(".follow-context-menu")?.remove();
-}
-
-function renderGameTile(item, menuMode) {
-  const status = item.upcoming ? '<small class="discovery-game-status">출시 예정</small>' : "";
-  const actionHint = menuMode === "add" ? "우클릭 또는 길게 눌러 팔로우" : "우클릭 또는 길게 눌러 팔로우 해제";
-  return `<a class="followed-game-tile ${menuMode === "add" ? "discovery-game-tile" : ""}" href="${escapeHTML(item.route)}" data-game-menu="${menuMode}" data-game-id="${escapeHTML(item.id)}" title="${escapeHTML(item.name)} 열기 · ${actionHint}"><span class="followed-game-icon"><img src="${escapeHTML(item.icon)}" alt="" /></span><span class="followed-game-name">${escapeHTML(item.name)}</span>${status}</a>`;
-}
-
-function renderGameDiscoveryList(items, emptyMessage) {
-  return items.length ? `<div class="game-discovery-list">${items.map((item) => renderGameTile(item, "add")).join("")}</div>` : `<p class="game-discovery-empty">${escapeHTML(emptyMessage)}</p>`;
 }
 
 function openGameContextMenu(gameId, mode, x, y, tileBounds) {
@@ -443,7 +524,7 @@ function renderNewsCard(item) {
   const read = isRead(item.id);
   return `
     <article class="news-card ${read ? "is-read" : ""}">
-      <a class="news-main" href="#/aion2/news/${encodeURIComponent(item.id)}" aria-label="${escapeHTML(item.title)} 상세 보기">
+      <a class="news-main" href="#/aion2/news/${encodeURIComponent(item.id)}" data-action="record-article-view" data-id="${escapeHTML(item.id)}" aria-label="${escapeHTML(item.title)} 상세 보기">
         <div class="news-topline"><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><span class="news-source">${escapeHTML(displayNewsSource(item))} · ${escapeHTML(item.date)}</span>${read ? '<span class="read-badge">읽음</span>' : ""}</div>
         <h3>${escapeHTML(item.title)}</h3>
       </a>
@@ -1154,7 +1235,7 @@ function renderChatbot() {
 }
 
 const tutorialSteps = [
-  { title: "게임을 찾아 팔로우하세요", body: "검색창에서 게임을 찾거나 오른쪽 게임 둘러보기에서 아이콘을 선택하세요. 아이콘을 누르면 게임 페이지로 이동하고, 둘러보기 목록은 우클릭하거나 길게 눌러 팔로우할 수 있어요.", tip: "내 게임 아이콘을 우클릭하거나 길게 누르면 팔로우를 해제할 수 있습니다." },
+  { title: "게임을 찾아 팔로우하세요", body: "검색창에서 게임을 찾고 팔로우하면 검색창 아래에 게임 아이콘 바로가기가 생깁니다. 아이콘을 누르면 게임 페이지로 이동하고, 우클릭하거나 길게 누르면 팔로우를 해제할 수 있어요.", tip: "출시 예정 게임은 남은 시간이 표시된 카운트다운에서 확인할 수 있습니다." },
   { title: "새 소식을 확인하세요", body: "아이온2의 공지, 업데이트, CM 아지트에서 최신 글을 확인할 수 있어요. 게시글을 열면 AI 요약과 항목별 분석, 공식 원문 링크가 표시됩니다.", tip: "읽은 글은 목록에서 읽음 표시로 구분됩니다." },
   { title: "북마크와 게임을 관리하세요", body: "게시글은 북마크로 저장하고, 대시보드에서 팔로우한 게임과 저장한 글을 관리하세요. 팔로우한 게임에 새 글이 올라오면 알림 메뉴에서 확인할 수 있어요.", tip: "대시보드에서 팔로우한 게임의 이벤트와 보상 마감 일정도 확인할 수 있습니다." },
 ];
@@ -1265,6 +1346,7 @@ function render() {
   app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}${renderChatbot()}`;
   drawNewsList();
   drawGameResults();
+  startReleaseCountdowns();
   maybeOpenTutorial();
 }
 
@@ -1402,9 +1484,11 @@ app.addEventListener("click", (event) => {
     const followedGame = gameCatalog.find((item) => item.id === gameId);
     showToast(`${followedGame?.name || "게임"} 팔로우를 시작했어요.`);
   }
-  if (action === "select-discovery-view") {
-    state.discoveryView = button.dataset.view === "upcoming" ? "upcoming" : "other";
-    render();
+  if (action === "record-article-view") {
+    const storedViews = readStorage("todaypatch.articleViews", {});
+    const views = storedViews && typeof storedViews === "object" && !Array.isArray(storedViews) ? storedViews : {};
+    views[id] = (Number(views[id]) || 0) + 1;
+    writeStorage("todaypatch.articleViews", views);
   }
   if (action === "open-tutorial") openTutorial();
   if (action === "tutorial-previous") {
