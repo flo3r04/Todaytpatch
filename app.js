@@ -40,13 +40,23 @@ applyTheme(readStorage("todaypatch.theme", "light"));
 
 const savedTasks = () => readStorage("todaypatch.tasks", {});
 const savedNews = () => readStorage("todaypatch.bookmarks", []);
+const readNews = () => {
+  const ids = readStorage("todaypatch.readNews", []);
+  return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
+};
 const followedGameIds = () => readStorage("todaypatch.followedGames", []);
 const recentGameSearches = () => {
   const searches = readStorage("todaypatch.recentGameSearches", []);
   return Array.isArray(searches) ? searches.filter((query) => typeof query === "string") : [];
 };
 const isSaved = (id) => savedNews().includes(id);
+const isRead = (id) => readNews().includes(id);
 const isGameFollowed = (id) => followedGameIds().includes(id);
+
+function markNewsAsRead(id) {
+  if (!id || isRead(id)) return;
+  writeStorage("todaypatch.readNews", [...readNews(), id]);
+}
 
 function rememberGameSearch(query) {
   const normalizedQuery = String(query || "").trim();
@@ -87,7 +97,7 @@ function routeKind(route = currentRoute()) {
   if (!parts.length) return "home";
   if (parts[0] === "aion2") {
     if (parts[1] === "news" && parts[2]) return "detail";
-    if (["news", "notices", "updates", "cm-stories", "tasks"].includes(parts[1])) return parts[1];
+    if (["news", "notices", "updates", "cm-stories", "tasks", "bookmarks"].includes(parts[1])) return parts[1];
     return "game-home";
   }
   return "home";
@@ -113,6 +123,7 @@ function renderHeader() {
     ["업데이트", "#/aion2/updates", "updates"],
     ["CM 이야기", "#/aion2/cm-stories", "cm-stories"],
     ["할 일", "#/aion2/tasks", "tasks"],
+    ["북마크", "#/aion2/bookmarks", "bookmarks"],
   ];
   const detailItem = kind === "detail" ? newsItems.find((item) => item.id === detailId()) : null;
   const activeDetailRoute = { notice: "notices", update: "updates", "cm-story": "cm-stories" }[detailItem?.sourceKey];
@@ -241,19 +252,30 @@ function categoryClass(category) {
 
 function renderNewsCard(item) {
   const bookmarked = isSaved(item.id);
+  const read = isRead(item.id);
   return `
-    <article class="news-card">
+    <article class="news-card ${read ? "is-read" : ""}">
       <a class="news-main" href="#/aion2/news/${encodeURIComponent(item.id)}" aria-label="${escapeHTML(item.title)} 상세 보기">
-        <div class="news-topline"><span class="category-pill category-${categoryClass(item.category)}">${escapeHTML(item.category)}</span><span class="news-source">${escapeHTML(item.source)} · ${escapeHTML(item.date)}</span></div>
+        <div class="news-topline"><span class="category-pill category-${categoryClass(item.category)}">${escapeHTML(item.category)}</span><span class="news-source">${escapeHTML(item.source)} · ${escapeHTML(item.date)}</span>${read ? '<span class="read-badge">읽음</span>' : ""}</div>
         <h3>${escapeHTML(item.title)}</h3>
-        <p class="news-excerpt">${escapeHTML(item.excerpt)}</p>
-        <div class="news-meta">${escapeHTML(item.meta)}</div>
       </a>
       <a class="news-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML(item.title)} 공식 본문 열기">본문 원문 <span aria-hidden="true">↗</span></a>
       <button class="bookmark-button ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg>
       </button>
     </article>`;
+}
+
+function renderBookmarksPage() {
+  const bookmarks = newsItems.filter((item) => isSaved(item.id));
+  return `
+    <main class="page-width game-page listing-page bookmarks-page">
+      ${renderGameIntro("저장한 북마크", "관심 있는 공지와 업데이트를 모아보세요.", "북마크")}
+      <section class="content-section feed-section">
+        <div class="section-heading list-heading"><div><h2>북마크한 게시물</h2><p>저장한 글 <span>${bookmarks.length}건</span></p></div></div>
+        ${bookmarks.length ? `<div class="news-list">${bookmarks.map(renderNewsCard).join("")}</div>` : `<div class="empty-state bookmark-empty"><span aria-hidden="true">★</span><strong>저장한 게시물이 없어요.</strong><p>게시물 카드의 북마크 아이콘을 눌러 여기에 모아보세요.</p><a class="secondary-button" href="#/aion2/news">전체 소식 보기</a></div>`}
+      </section>
+    </main>`;
 }
 
 function renderFeedPage(kind) {
@@ -322,7 +344,7 @@ function renderDetail(id) {
       ${renderGameIntro("게시물 상세", "AI가 핵심 내용을 정리하고 분석한 결과를 확인하세요.", "게시물 상세")}
       <div class="detail-layout">
         <article class="detail-main">
-          <div class="detail-title-row"><div><span class="category-pill category-${categoryClass(item.category)}">${escapeHTML(item.category)}</span><h1>${escapeHTML(item.title)}</h1><p>${escapeHTML(item.excerpt)}</p></div><button class="bookmark-button detail-bookmark ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg></button></div>
+          <div class="detail-title-row"><div><span class="category-pill category-${categoryClass(item.category)}">${escapeHTML(item.category)}</span><h1>${escapeHTML(item.title)}</h1></div><button class="bookmark-button detail-bookmark ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg></button></div>
           <section class="article-panel summary-panel"><div class="panel-heading"><h2>전체 내용 요약</h2><span class="summary-badge">전체 흐름</span></div><p class="summary-copy">${escapeHTML(summary)}</p></section>
           <section class="article-panel analysis-panel"><div class="panel-heading"><h2>AI 분석</h2><span class="example-label">이용자 관점</span></div><p>${escapeHTML(analysis)}</p>${detailedSections}<a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 링크 열기 <span aria-hidden="true">↗</span></a></section>
           <section class="article-panel"><div class="panel-heading"><h2>수집 정보</h2><span class="example-label">공식 게시판</span></div><dl class="info-list"><div><dt>게시판</dt><dd>${escapeHTML(item.source)}</dd></div><div><dt>게시일</dt><dd>${escapeHTML(item.date)}</dd></div><div><dt>수정일</dt><dd>${item.updatedAt ? escapeHTML(formatDisplayDate(item.updatedAt)) : "수정 기록 없음"}</dd></div></dl></section>
@@ -390,10 +412,12 @@ function drawGameResults() {
 
 function render() {
   const kind = routeKind();
+  if (kind === "detail") markNewsAsRead(detailId());
   let page;
   if (kind === "game-home") page = renderGameHome();
   else if (["news", "notices", "updates", "cm-stories"].includes(kind)) page = renderFeedPage(kind);
   else if (kind === "tasks") page = renderTasksPage();
+  else if (kind === "bookmarks") page = renderBookmarksPage();
   else if (kind === "detail") page = renderDetail(detailId());
   else page = renderHome();
   app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}`;
