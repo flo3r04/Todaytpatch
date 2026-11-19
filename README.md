@@ -32,7 +32,7 @@ $env:AI_PROVIDER = "openrouter"
 npm run crawl
 ```
 
-`AI_PROVIDER`는 현재 PowerShell 창에만 적용됩니다. 새 PowerShell 창에서는 기본 OpenAI 설정으로 돌아갑니다. OpenRouter 키는 `OPENAI_API_KEY`와 다른 키이므로 `OPENROUTER_API_KEY`로 등록해야 합니다. 크롤러는 `google/gemma-4-31b-it:free`만 요청하며 다른 모델로 대체하지 않습니다. 429 응답은 `Retry-After` 값(없으면 60초)을 기다려 한 번 재시도한 뒤에도 실패하면 중단하고 기존 데이터는 유지합니다. 응답 모델 ID가 Gemma와 다르면 결과를 저장하지 않습니다. 무료 모델 ID에는 `:free` 접미사가 필요하며, 접미사가 없는 `google/gemma-4-31b-it`은 별도의 유료 모델 ID입니다. OpenRouter 연결은 Chat Completions JSON 모드를 사용합니다. 이 모델은 JSON 형식은 지원하지만 JSON Schema를 강제하지 않으므로, 크롤러가 결과를 검사한 뒤에만 데이터를 갱신합니다.
+`AI_PROVIDER`는 현재 PowerShell 창에만 적용됩니다. 새 PowerShell 창에서는 기본 OpenAI 설정으로 돌아갑니다. OpenRouter 키는 `OPENAI_API_KEY`와 다른 키이므로 `OPENROUTER_API_KEY`로 등록해야 합니다. 크롤러는 `google/gemma-4-31b-it:free`만 요청하며 다른 모델로 대체하지 않습니다. 429 응답은 `Retry-After` 값(없으면 60초)을 기다려 한 번 재시도한 뒤에도 실패하면 중단하고 기존 데이터는 유지합니다. 응답 모델 ID가 Gemma와 다르면 결과를 저장하지 않습니다. 무료 모델 ID에는 `:free` 접미사가 필요하며, 접미사가 없는 `google/gemma-4-31b-it`은 별도의 유료 모델 ID입니다. OpenRouter 연결은 Chat Completions에서 강제 도구 호출로 결과를 받고, 응답의 JSON과 필수 필드를 검증합니다. 형식이 잘못된 응답은 같은 Gemma 모델로 한 번 재요청하며, 그래도 실패하면 기존 데이터를 유지합니다.
 
 - [공지](https://aion2.plaync.com/ko-kr/board/notice/list)
 - [업데이트](https://aion2.plaync.com/ko-kr/board/update/list)

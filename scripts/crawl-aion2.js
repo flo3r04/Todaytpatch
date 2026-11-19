@@ -184,7 +184,7 @@ function responseOutputText(response) {
     .find((contentItem) => contentItem.type === "output_text")?.text;
 }
 
-async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0) {
+async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0, formatAttempt = 0) {
   const inputItems = items.map(({ id, category, title, bodyText }) => ({
     id,
     category,
@@ -236,11 +236,20 @@ async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0) {
       messages: [
         {
           role: "system",
-          content: `${instructions}\n응답은 설명이나 코드 블록 없이 다음 형태의 JSON 객체만 반환하세요: {"items":[{"id":"입력 id","summary":"요약","analysis":"이용자 관점 분석","keyPoints":["핵심 내용"]}]}`,
+          content: `${instructions}\n반드시 summarize_aion2_posts 도구를 호출해 결과를 반환하세요. 도구 호출 외의 일반 텍스트는 반환하지 마세요.${formatAttempt > 0 ? "\n이전 응답의 형식 검증에 실패했습니다. 모든 필드를 빠짐없이 채워 도구를 정확히 한 번 호출하세요." : ""}`,
         },
         { role: "user", content: JSON.stringify(inputItems) },
       ],
-      response_format: { type: "json_object" },
+      tools: [{
+        type: "function",
+        function: {
+          name: "summarize_aion2_posts",
+          description: "입력된 AION2 게시물들을 한국어로 요약하고 이용자 관점에서 분석합니다.",
+          parameters: schema,
+        },
+      }],
+      tool_choice: { type: "function", function: { name: "summarize_aion2_posts" } },
+      parallel_tool_calls: false,
       max_tokens: 6000,
     };
   } else {
@@ -290,7 +299,7 @@ async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0) {
         );
         console.warn(`OpenRouter가 요청을 제한했습니다. ${retryAfterSeconds}초 대기 후 한 번 재시도합니다.`);
         await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
-        return summarizeBatch(items, apiKey, modelName, attempt + 1);
+        return summarizeBatch(items, apiKey, modelName, attempt + 1, formatAttempt);
       }
       const limitMessage = sharedProviderLimit ? "Gemma 제공처가 계속 요청을 제한합니다. " : "";
       throw new Error(`${limitMessage}다른 모델로 대체하지 않고 중단합니다. HTTP ${errorStatus} ${errorBody.slice(0, 500)}`);
@@ -311,22 +320,44 @@ async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0) {
     }
   }
 
-  const openRouterContent = result.choices?.[0]?.message?.content;
+  const message = result.choices?.[0]?.message;
+  const toolCall = message?.tool_calls?.find((call) => call.function?.name === "summarize_aion2_posts");
   const outputText = aiProvider === "openrouter"
-    ? (typeof openRouterContent === "string" ? openRouterContent : "")
+    ? (typeof toolCall?.function?.arguments === "string" ? toolCall.function.arguments : "")
     : responseOutputText(result);
-  if (!outputText) throw new Error(`${aiProvider} 응답에 요약 결과가 없습니다.`);
-
-  const parsed = JSON.parse(outputText);
-  if (!Array.isArray(parsed.items) || parsed.items.length !== items.length) {
-    throw new Error(`${aiProvider}가 모든 게시물의 요약을 반환하지 않았습니다.`);
+  let parsed;
+  let formatError = "";
+  try {
+    if (!outputText) throw new Error("요약 도구 응답이 없습니다.");
+    parsed = JSON.parse(outputText);
+  } catch (error) {
+    formatError = error.message;
   }
-  const byId = new Map(parsed.items.map((item) => [item.id, item]));
+
+  const parsedItems = Array.isArray(parsed?.items) ? parsed.items : [];
+  const byId = new Map(parsedItems.map((item) => [item.id, item]));
+  const validResult = parsedItems.length === items.length
+    && byId.size === items.length
+    && items.every((item) => {
+      const analysis = byId.get(item.id);
+      return typeof analysis?.summary === "string"
+        && Boolean(analysis.summary.trim())
+        && typeof analysis?.analysis === "string"
+        && Boolean(analysis.analysis.trim())
+        && Array.isArray(analysis.keyPoints)
+        && analysis.keyPoints.every((point) => typeof point === "string");
+    });
+
+  if (!validResult) {
+    if (aiProvider === "openrouter" && formatAttempt === 0) {
+      console.warn(`Gemma 요약 형식 검증 실패(${formatError || "필수 필드 누락"}). 같은 모델로 한 번 다시 요청합니다.`);
+      return summarizeBatch(items, apiKey, modelName, attempt, formatAttempt + 1);
+    }
+    throw new Error(`${aiProvider} 요약 응답 형식이 올바르지 않습니다${formatError ? `: ${formatError}` : "."}`);
+  }
+
   return items.map((item) => {
     const analysis = byId.get(item.id);
-    if (!analysis?.summary || !analysis?.analysis || !Array.isArray(analysis.keyPoints)) {
-      throw new Error(`${aiProvider} 요약 결과가 올바르지 않습니다: ${item.title}`);
-    }
     return {
       ...item,
       summary: analysis.summary,
