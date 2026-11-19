@@ -122,7 +122,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .home-following { width: min(100%, 760px); margin-top: 20px; text-align: left; }
 .home-following-heading { margin-bottom: 11px; display: flex; align-items: flex-end; gap: 12px; }
 .home-following-heading h2 { margin: 4px 0 0; font-size: 16px; letter-spacing: -.035em; }
-.home-following-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 11px; }
+.home-following-layout { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: stretch; gap: 11px; }
 .home-game-panel { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .home-game-panel-heading { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .home-game-panel-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
@@ -426,7 +426,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .dashboard-stat { min-height: 76px; padding: 14px 17px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .dashboard-stat span { color: var(--muted); font-size: 13px; }
 .dashboard-stat strong { color: var(--brand); font-size: 22px; }
-.dashboard-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 15px; }
+.dashboard-columns { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: stretch; gap: 15px; }
 .dashboard-section { min-width: 0; padding: 19px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .dashboard-section-heading { margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .dashboard-section-heading h2 { margin: 4px 0 0; font-size: 18px; letter-spacing: -.035em; }
