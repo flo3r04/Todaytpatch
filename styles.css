@@ -197,7 +197,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .article-source-link { color: var(--brand); font-size: 9px; white-space: nowrap; }
 .summary-badge { padding: 5px 7px; border-radius: 5px; background: var(--brand-soft); color: var(--brand); font-size: 9px; }
 .summary-copy { margin: 12px 0 0; color: var(--ink); font-size: 12px; line-height: 1.9; white-space: pre-line; overflow-wrap: anywhere; }
-.analysis-panel > p { margin: 12px 0 10px; color: var(--muted); font-size: 10px; line-height: 1.85; white-space: pre-line; overflow-wrap: anywhere; }
+.analysis-panel > p { margin: 12px 0 14px; color: var(--muted); font-size: 11px; line-height: 1.9; white-space: pre-line; overflow-wrap: anywhere; }
+.analysis-sections { display: grid; gap: 9px; margin: 14px 0; }
+.analysis-sections > h3 { margin: 0 0 2px; font-size: 12px; }
+.analysis-section { padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.analysis-section h4 { margin: 0 0 6px; color: var(--ink); font-size: 11px; }
+.analysis-section p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.8; white-space: pre-line; overflow-wrap: anywhere; }
+.analysis-section ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 5px; }
+.analysis-section li { padding-left: 1px; color: var(--muted); font-size: 10px; line-height: 1.8; overflow-wrap: anywhere; }
 .key-point-list { margin: 0 0 13px; padding: 0; display: grid; gap: 7px; list-style: none; }
 .key-point-list li { position: relative; padding-left: 14px; color: var(--muted); font-size: 10px; line-height: 1.7; }
 .key-point-list li::before { position: absolute; top: .68em; left: 2px; width: 4px; height: 4px; border-radius: 50%; background: var(--brand); content: ""; }
