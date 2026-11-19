@@ -122,9 +122,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .news-list { display: flex; flex-direction: column; gap: 9px; }
 .news-card { position: relative; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); transition: border-color 140ms ease, box-shadow 140ms ease; }
 .news-card:hover { border-color: #cfd8e7; box-shadow: 0 5px 15px rgba(35, 48, 77, .035); }
-.news-main { display: block; min-height: 119px; padding: 15px 54px 14px 16px; border-radius: inherit; }
+.news-main { display: block; min-height: 119px; padding: 15px 54px 39px 16px; border-radius: inherit; }
 .news-topline { min-height: 20px; display: flex; align-items: center; gap: 9px; }
 .category-pill { min-height: 20px; padding: 3px 7px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; background: #eef2ff; color: var(--brand); font-size: 9px; font-weight: 500; white-space: nowrap; }
+.category-notice { background: #f0f3f7; color: #68778d; }
+.category-cm { background: #f3efff; color: #775fbd; }
 .category-event { background: #edf7f1; color: #438167; }
 .category-class { background: #f3efff; color: #775fbd; }
 .category-maintenance { background: #fff5e9; color: #a97832; }
@@ -133,6 +135,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .news-main h3 { margin: 8px 0 4px; font-size: 13px; line-height: 1.5; font-weight: 600; letter-spacing: -.025em; }
 .news-excerpt { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.65; }
 .news-meta { margin-top: 9px; color: var(--muted-light); font-size: 9px; }
+.news-source-link { position: absolute; right: 16px; bottom: 13px; color: var(--brand); font-size: 9px; }
+.news-source-link:hover, .article-source-link:hover { text-decoration: underline; }
 .bookmark-button { position: absolute; top: 13px; right: 12px; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: #8793a6; cursor: pointer; }
 .bookmark-button:hover { background: var(--brand-soft); color: var(--brand); }
 .bookmark-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
@@ -157,6 +161,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .task-copy strong, .task-copy span { display: block; }
 .task-copy strong { font-size: 11px; font-weight: 500; }
 .task-copy span { margin-top: 4px; color: var(--muted-light); font-size: 9px; }
+.task-copy a { margin-top: 4px; display: block; overflow: hidden; color: var(--muted-light); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.task-copy a:hover { color: var(--brand); }
 .task-row.completed .task-copy strong { color: var(--muted-light); text-decoration: line-through; }
 .task-due { color: var(--muted-light); font-size: 9px; text-align: right; }
 .task-legend { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 15px; color: var(--muted); font-size: 9px; }
@@ -173,6 +179,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .detail-bookmark { top: 16px; right: 14px; }
 .article-panel { margin-bottom: 12px; padding: 18px; }
 .panel-heading h2, .source-panel h2 { margin: 0; font-size: 14px; letter-spacing: -.025em; }
+.article-source-link { color: var(--brand); font-size: 9px; white-space: nowrap; }
+.article-body-text { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.85; white-space: pre-line; overflow-wrap: anywhere; }
 .example-label { color: var(--muted-light); font-size: 9px; }
 .article-panel > p { margin: 12px 0; color: var(--muted); font-size: 10px; line-height: 1.8; }
 .topic-list { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -265,7 +273,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .filter-row { gap: 2px; }
   .filter-chip { padding-inline: 8px; }
   .clear-filter { padding-left: 5px; }
-  .news-main { min-height: 112px; padding: 13px 43px 12px 13px; }
+  .news-main { min-height: 112px; padding: 13px 43px 37px 13px; }
   .news-main h3 { font-size: 12px; }
   .news-excerpt { font-size: 9px; }
   .news-meta { font-size: 8px; }
