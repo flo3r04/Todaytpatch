@@ -5,10 +5,10 @@ const apiBase = "https://api-community.plaync.com/aion2";
 const dataPath = path.join(__dirname, "..", "data", "aion2.js");
 const sinceDate = process.env.AION2_CRAWL_SINCE || "2026-11-18";
 const aiProvider = (process.env.AI_PROVIDER || "openai").toLowerCase();
+const openRouterGemmaModel = "google/gemma-4-31b-it:free";
 const aiModel = aiProvider === "openrouter"
-  ? process.env.OPENROUTER_MODEL || "google/gemma-4-31b-it:free"
+  ? openRouterGemmaModel
   : process.env.OPENAI_MODEL || "gpt-5.4-mini";
-const openRouterFallbackModel = process.env.OPENROUTER_FALLBACK_MODEL ?? "openrouter/free";
 const summaryBatchSize = 8;
 const boards = [
   {
@@ -292,11 +292,8 @@ async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0) {
         await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
         return summarizeBatch(items, apiKey, modelName, attempt + 1);
       }
-      if (sharedProviderLimit && openRouterFallbackModel && modelName !== openRouterFallbackModel) {
-        console.warn(`OpenRouter 제공처 제한으로 ${modelName} 대신 ${openRouterFallbackModel}로 요약을 다시 요청합니다.`);
-        return summarizeBatch(items, apiKey, openRouterFallbackModel, attempt + 1);
-      }
-      throw new Error(`openrouter 요약 요청 실패: HTTP ${errorStatus} ${errorBody.slice(0, 500)}`);
+      const limitMessage = sharedProviderLimit ? "Gemma 제공처가 계속 요청을 제한합니다. " : "";
+      throw new Error(`${limitMessage}다른 모델로 대체하지 않고 중단합니다. HTTP ${errorStatus} ${errorBody.slice(0, 500)}`);
     }
   } else {
     if (!response.ok) {
@@ -304,6 +301,14 @@ async function summarizeBatch(items, apiKey, modelName = aiModel, attempt = 0) {
       throw new Error(`openai 요약 요청 실패: HTTP ${response.status} ${errorBody.slice(0, 500)}`);
     }
     result = await response.json();
+  }
+
+  if (aiProvider === "openrouter" && result.model) {
+    const returnedModel = String(result.model).split(":")[0];
+    const requestedModel = modelName.split(":")[0];
+    if (returnedModel !== requestedModel) {
+      throw new Error(`요청 모델(${modelName})과 응답 모델(${result.model})이 달라 요약 저장을 중단합니다.`);
+    }
   }
 
   const openRouterContent = result.choices?.[0]?.message?.content;
