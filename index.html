@@ -7,6 +7,11 @@
     <meta name="description" content="게임을 선택하고 아이온2 업데이트, 직업별 변경점, 공략과 일정을 확인하세요." />
     <title>오늘의 패치</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <script>
+      try {
+        if (localStorage.getItem("todaypatch.theme") === '"dark"') document.documentElement.dataset.theme = "dark";
+      } catch {}
+    </script>
     <link rel="stylesheet" href="./styles.css" />
     <script src="./data/aion2.js" defer></script>
     <script src="./app.js" defer></script>

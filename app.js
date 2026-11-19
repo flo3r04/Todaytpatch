@@ -29,6 +29,15 @@ function writeStorage(key, value) {
   }
 }
 
+function applyTheme(theme) {
+  const safeTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = safeTheme;
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) themeColor.content = safeTheme === "dark" ? "#0d1420" : "#f7f8fb";
+}
+
+applyTheme(readStorage("todaypatch.theme", "light"));
+
 const savedTasks = () => readStorage("todaypatch.tasks", {});
 const savedNews = () => readStorage("todaypatch.bookmarks", []);
 const followedGameIds = () => readStorage("todaypatch.followedGames", []);
@@ -81,6 +90,11 @@ function detailId() {
 function renderHeader() {
   const kind = routeKind();
   const inGame = kind !== "home";
+  const isDark = document.documentElement.dataset.theme === "dark";
+  const themeLabel = isDark ? "라이트 모드" : "다크 모드";
+  const themeIcon = isDark
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>'
+    : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.7 8.7 0 1 0 20.4 15.2Z"/></svg>';
   const links = [
     ["개요", "#/aion2", "game-home"],
     ["전체 소식", "#/aion2/news", "news"],
@@ -104,6 +118,7 @@ function renderHeader() {
           <nav class="main-nav" id="main-nav" aria-label="아이온2 메뉴">
             ${links.map(([label, href, route]) => `<a class="nav-link ${kind === route || (kind === "detail" && route === activeDetailRoute) ? "active" : ""}" href="${href}" ${kind === route || (kind === "detail" && route === activeDetailRoute) ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
           </nav>` : `<span class="header-caption">게임별 소식을 한곳에서</span>`}
+        <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
       </div>
     </header>`;
 }
@@ -439,6 +454,12 @@ app.addEventListener("click", (event) => {
     const nav = app.querySelector("#main-nav");
     const open = nav.classList.toggle("mobile-open");
     button.setAttribute("aria-expanded", String(open));
+  }
+  if (action === "toggle-theme") {
+    const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    writeStorage("todaypatch.theme", nextTheme);
+    applyTheme(nextTheme);
+    render();
   }
   if (action === "login") openDialog("login");
   if (action === "report") openDialog("report");
