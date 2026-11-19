@@ -42,13 +42,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .page-width { width: min(1080px, calc(100% - 48px)); margin-inline: auto; }
 
 .site-header { height: 68px; background: var(--surface); border-bottom: 1px solid var(--line); }
-.header-inner { width: min(1080px, calc(100% - 48px)); height: 100%; margin-inline: auto; display: flex; align-items: center; gap: 20px; }
+.header-inner { position: relative; width: min(1080px, calc(100% - 48px)); height: 100%; margin-inline: auto; display: flex; align-items: center; gap: 20px; }
 .brand { display: inline-flex; align-items: center; gap: 9px; flex: 0 0 auto; }
 .brand > span:last-child { font-size: 18px; font-weight: 700; letter-spacing: -.055em; }
 .brand-mark { width: 22px; height: 22px; display: inline-flex; flex-direction: column; justify-content: center; gap: 3px; padding: 5px; border-radius: 7px; background: var(--brand); }
 .brand-mark span { height: 2px; border-radius: 2px; background: #fff; }
 .brand-mark span:nth-child(2) { width: 72%; }
-.header-caption { margin-left: auto; color: var(--muted-light); font-size: 12px; }
+.header-caption { position: absolute; left: 50%; color: var(--muted-light); font-size: 12px; transform: translateX(-50%); white-space: nowrap; }
 .header-game { display: inline-flex; align-items: center; gap: 17px; color: var(--ink); font-size: 13px; font-weight: 600; white-space: nowrap; }
 .header-divider { width: 1px; height: 23px; display: inline-block; background: var(--line-strong); }
 .main-nav { display: flex; align-items: center; gap: 25px; margin-left: auto; }
@@ -57,7 +57,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .nav-link.active { border-bottom-color: var(--brand); font-weight: 600; }
 .mobile-menu-button { display: none; }
 .theme-toggle { min-height: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; cursor: pointer; transition: border-color 140ms ease, color 140ms ease, background 140ms ease; }
-.header-caption + .theme-toggle { margin-left: auto; }
+.header-caption ~ .theme-toggle { margin-left: auto; }
 .theme-toggle:hover { border-color: var(--brand); color: var(--brand); }
 .theme-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .dashboard-link { min-height: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; transition: border-color 140ms ease, color 140ms ease, background 140ms ease; }
