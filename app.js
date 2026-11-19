@@ -9,7 +9,7 @@ const taskItems = [
 
 const categories = ["전체", "공지", "업데이트", "CM 이야기"];
 const game = { id: "aion2", name: "아이온2", aliases: "aion2 아이온2" };
-const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false };
+const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false };
 const app = document.querySelector("#app");
 
 function readStorage(key, fallback) {
@@ -56,6 +56,73 @@ const recentGameSearches = () => {
 const isSaved = (id) => savedNews().includes(id);
 const isRead = (id) => readNews().includes(id);
 const isGameFollowed = (id) => followedGameIds().includes(id);
+const storedNotifications = () => {
+  const notifications = readStorage("todaypatch.notifications", []);
+  return Array.isArray(notifications) ? notifications.filter((item) => item && typeof item.id === "string" && typeof item.title === "string") : [];
+};
+
+function knownNewsByGame() {
+  const known = readStorage("todaypatch.knownNewsByGame", {});
+  return known && typeof known === "object" && !Array.isArray(known) ? known : {};
+}
+
+function rememberCurrentGameNews(gameId) {
+  if (gameId !== game.id) return;
+  const known = knownNewsByGame();
+  known[gameId] = [...new Set([...(Array.isArray(known[gameId]) ? known[gameId] : []), ...newsItems.map((item) => item.id)])].slice(-1000);
+  writeStorage("todaypatch.knownNewsByGame", known);
+}
+
+function notifyBrowserOfNewPosts(items) {
+  if (!readStorage("todaypatch.browserNotifications", false) || !("Notification" in window) || Notification.permission !== "granted" || !items.length) return;
+  const latest = items[0];
+  try {
+    const notification = new Notification("아이온2 새 소식", {
+      body: items.length > 1 ? `${latest.title} 외 ${items.length - 1}건` : latest.title,
+      icon: "./assets/aion2-logo.png",
+      tag: "todaypatch-aion2-news",
+    });
+    notification.onclick = () => {
+      window.focus();
+      window.location.hash = `#/aion2/news/${encodeURIComponent(latest.id)}`;
+      notification.close();
+    };
+  } catch {
+    // In-app notifications remain available when desktop notifications are unavailable.
+  }
+}
+
+function syncFollowedNewsNotifications() {
+  if (!followedGameIds().includes(game.id)) return;
+  const known = knownNewsByGame();
+  const currentIds = newsItems.map((item) => item.id);
+  if (!Array.isArray(known[game.id])) {
+    known[game.id] = [...new Set(currentIds)].slice(-1000);
+    writeStorage("todaypatch.knownNewsByGame", known);
+    return;
+  }
+  const knownIds = new Set(known[game.id]);
+  const newPosts = newsItems.filter((item) => !knownIds.has(item.id));
+  known[game.id] = [...new Set([...known[game.id], ...currentIds])].slice(-1000);
+  writeStorage("todaypatch.knownNewsByGame", known);
+  if (!newPosts.length) return;
+
+  const notifications = storedNotifications();
+  const existingIds = new Set(notifications.map((item) => item.id));
+  const added = newPosts.filter((item) => !existingIds.has(item.id)).map((item) => ({
+    id: item.id,
+    gameId: game.id,
+    title: item.title,
+    category: item.category,
+    date: item.date,
+    url: item.url,
+    createdAt: new Date().toISOString(),
+    read: false,
+  }));
+  if (!added.length) return;
+  writeStorage("todaypatch.notifications", [...added, ...notifications].slice(0, 100));
+  notifyBrowserOfNewPosts(added);
+}
 
 function markNewsAsRead(id) {
   if (!id || isRead(id)) return;
@@ -113,6 +180,39 @@ function detailId() {
   return parts[0] === "aion2" ? parts[2] : undefined;
 }
 
+function renderNotificationControl() {
+  const notifications = storedNotifications();
+  const unreadCount = notifications.filter((item) => !item.read).length;
+  const browserSupported = "Notification" in window;
+  const browserPermission = browserSupported ? Notification.permission : "unsupported";
+  const browserEnabled = readStorage("todaypatch.browserNotifications", false);
+  const browserSetting = !browserSupported
+    ? `<span class="notification-setting-note">이 브라우저는 데스크톱 알림을 지원하지 않습니다.</span>`
+    : browserPermission === "denied"
+      ? `<span class="notification-setting-note">브라우저 설정에서 알림 권한을 허용해 주세요.</span>`
+      : `<button class="notification-setting-button" type="button" data-action="toggle-browser-notifications">브라우저 알림 ${browserEnabled ? "끄기" : "켜기"}</button>`;
+  const list = notifications.length
+    ? `<div class="notification-list">${notifications.slice(0, 30).map((item) => {
+      const exists = newsItems.some((news) => news.id === item.id);
+      const href = exists ? `#/aion2/news/${encodeURIComponent(item.id)}` : item.url;
+      const target = exists ? "" : 'target="_blank" rel="noopener noreferrer"';
+      return `<a class="notification-item ${item.read ? "read" : "unread"}" href="${escapeHTML(href)}" ${target} data-action="open-notification" data-id="${escapeHTML(item.id)}"><span class="notification-dot" aria-hidden="true"></span><span class="notification-copy"><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.gameId === game.id ? game.name : item.gameId)} · ${escapeHTML(item.category || "새 소식")} · ${escapeHTML(item.date || "")}</small></span></a>`;
+    }).join("")}</div>`
+    : `<div class="notification-empty"><strong>새 알림이 없습니다.</strong><p>팔로우한 게임의 새 글은 크롤링 후 페이지를 방문하면 여기에 표시됩니다.</p></div>`;
+
+  return `<div class="notification-wrap">
+    <button id="notification-toggle" class="notification-toggle" type="button" data-action="toggle-notifications" aria-label="알림${unreadCount ? `, 읽지 않은 알림 ${unreadCount}개` : ""}" aria-expanded="${state.notificationsOpen}" title="알림">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-2.5 7-2.5 9h17C20.5 16 18 16 18 9Zm-8.2 12h4.4"/></svg>
+      <span class="notification-count" ${unreadCount ? "" : "hidden"}>${unreadCount > 99 ? "99+" : unreadCount}</span>
+    </button>
+    <section class="notification-popover" aria-label="알림 목록" ${state.notificationsOpen ? "" : "hidden"}>
+      <div class="notification-heading"><h2>알림</h2><button type="button" data-action="mark-all-notifications-read" ${unreadCount ? "" : "disabled"}>모두 읽음</button></div>
+      <div class="notification-settings"><span>새 소식을 브라우저에서도 알림</span>${browserSetting}</div>
+      ${list}
+    </section>
+  </div>`;
+}
+
 function renderHeader() {
   const kind = routeKind();
   const inGame = kind !== "home" && kind !== "dashboard";
@@ -146,6 +246,7 @@ function renderHeader() {
             ${links.map(([label, href, route]) => `<a class="nav-link ${kind === route || (kind === "detail" && route === activeDetailRoute) ? "active" : ""}" href="${href}" ${kind === route || (kind === "detail" && route === activeDetailRoute) ? 'aria-current="page"' : ""}>${label}</a>`).join("")}
           </nav>` : `<span class="header-caption">게임별 소식을 한곳에서</span>`}
         <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
+        ${renderNotificationControl()}
         <a class="dashboard-link ${kind === "dashboard" ? "active" : ""}" href="#/dashboard" ${kind === "dashboard" ? 'aria-current="page"' : ""} aria-label="대시보드"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.7-3.2 3-5 6.5-5s5.8 1.8 6.5 5"/></svg><span>대시보드</span></a>
       </div>
     </header>`;
@@ -461,6 +562,7 @@ function drawGameResults() {
 }
 
 function render() {
+  syncFollowedNewsNotifications();
   const kind = routeKind();
   if (kind === "detail") markNewsAsRead(detailId());
   let page;
@@ -499,12 +601,63 @@ function showToast(message) {
 }
 
 app.addEventListener("click", (event) => {
+  const notificationWrap = event.target.closest(".notification-wrap");
+  if (!notificationWrap && state.notificationsOpen) {
+    state.notificationsOpen = false;
+    const popover = app.querySelector(".notification-popover");
+    if (popover) popover.hidden = true;
+    app.querySelector("#notification-toggle")?.setAttribute("aria-expanded", "false");
+  }
   const button = event.target.closest("[data-action]");
   if (!button) {
     if (event.target.id === "app-dialog") event.target.close();
     return;
   }
   const { action, id } = button.dataset;
+  if (action === "toggle-notifications") {
+    state.notificationsOpen = !state.notificationsOpen;
+    app.querySelector(".notification-popover").hidden = !state.notificationsOpen;
+    button.setAttribute("aria-expanded", String(state.notificationsOpen));
+  }
+  if (action === "open-notification") {
+    event.preventDefault();
+    writeStorage("todaypatch.notifications", storedNotifications().map((item) => item.id === id ? { ...item, read: true } : item));
+    const href = button.getAttribute("href");
+    state.notificationsOpen = false;
+    if (button.getAttribute("target") === "_blank") {
+      window.open(href, "_blank", "noopener,noreferrer");
+      render();
+    } else if (href?.startsWith("#/")) {
+      const route = href.slice(1);
+      if (window.location.hash === route) render();
+      else window.location.hash = route;
+    }
+  }
+  if (action === "mark-all-notifications-read") {
+    writeStorage("todaypatch.notifications", storedNotifications().map((item) => ({ ...item, read: true })));
+    render();
+  }
+  if (action === "toggle-browser-notifications") {
+    const browserEnabled = readStorage("todaypatch.browserNotifications", false);
+    if (browserEnabled) {
+      writeStorage("todaypatch.browserNotifications", false);
+      render();
+      showToast("브라우저 알림을 껐어요.");
+    } else if (!("Notification" in window)) {
+      showToast("이 브라우저에서는 데스크톱 알림을 사용할 수 없어요.");
+    } else if (Notification.permission === "denied") {
+      showToast("브라우저 설정에서 알림 권한을 허용해 주세요.");
+    } else {
+      const enableNotifications = (permission) => {
+        const enabled = permission === "granted";
+        writeStorage("todaypatch.browserNotifications", enabled);
+        render();
+        showToast(enabled ? "새 소식 브라우저 알림을 켰어요." : "브라우저 알림 권한이 허용되지 않았어요.");
+      };
+      if (Notification.permission === "granted") enableNotifications("granted");
+      else Notification.requestPermission().then(enableNotifications).catch(() => showToast("브라우저 알림 권한을 설정하지 못했어요."));
+    }
+  }
   if (action === "filter") {
     state.filter = button.dataset.filter;
     app.querySelectorAll(".filter-chip").forEach((chip) => {
@@ -548,6 +701,7 @@ app.addEventListener("click", (event) => {
     const followed = followedGameIds();
     const wasFollowed = followed.includes(gameId);
     writeStorage("todaypatch.followedGames", wasFollowed ? followed.filter((item) => item !== gameId) : [...followed, gameId]);
+    if (!wasFollowed) rememberCurrentGameNews(gameId);
     render();
     showToast(wasFollowed ? "팔로우를 해제했어요." : "아이온2를 팔로우했어요.");
   }
