@@ -9,7 +9,7 @@
   const state = {
     user: null, sessionLoaded: false, posts: [], post: null, reports: [], feedPosts: [], notifications: [],
     gameId: "aion2", type: "", sort: "latest", query: "", loading: false, error: "",
-    adminToken: "", editorPost: null,
+    adminToken: "", editorPost: null, authMode: "login",
   };
   let context = null;
   let sequence = 0;
@@ -76,9 +76,20 @@
 
   function renderAccountControl() {
     if (state.user) {
-      return `<span class="community-account" title="이 브라우저에 연결된 게스트 계정">${escapeHTML(state.user.displayName)}</span>`;
+      return `<span class="community-account" title="${state.user.email ? "로그인된 계정" : "기기 전용 게스트 계정"}">${escapeHTML(state.user.displayName)}</span>${state.user.email ? "" : `<button class="community-login-button" type="button" data-action="community-login" data-mode="register">계정 연결</button>`}<button class="community-logout-button" type="button" data-action="community-logout">로그아웃</button>`;
     }
-    return `<button class="community-login-button" type="button" data-action="community-login">게스트 로그인</button>`;
+    return `<button class="community-login-button" type="button" data-action="community-login">로그인</button>`;
+  }
+
+  function openAuthDialog(mode = "login") {
+    state.authMode = mode === "register" ? "register" : "login";
+    const dialog = document.querySelector("#app-dialog");
+    const content = document.querySelector("#dialog-content");
+    if (!dialog || !content) return;
+    const registering = state.authMode === "register";
+    content.innerHTML = `<button class="dialog-close" type="button" data-action="close-dialog" aria-label="닫기">×</button><span class="page-eyebrow">TODAYPATCH ACCOUNT</span><h2 id="dialog-title">${registering ? "계정 만들기" : "로그인"}</h2><p>${registering ? "계정을 만들면 커뮤니티 글과 댓글을 여러 기기에서 이어서 이용할 수 있습니다." : "가입한 이메일과 비밀번호로 로그인하세요."}</p><form id="community-auth-form" data-mode="${state.authMode}">${registering ? `<label for="community-auth-name">닉네임</label><input id="community-auth-name" name="displayName" type="text" minlength="2" maxlength="24" autocomplete="nickname" placeholder="게시판에 표시할 이름" required />` : ""}<label for="community-auth-email">이메일</label><input id="community-auth-email" name="email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com" required /><label for="community-auth-password">비밀번호</label><input id="community-auth-password" name="password" type="password" minlength="${registering ? 10 : 1}" maxlength="128" autocomplete="${registering ? "new-password" : "current-password"}" placeholder="${registering ? "10자 이상" : "비밀번호"}" required />${registering ? `<label for="community-auth-password-confirm">비밀번호 확인</label><input id="community-auth-password-confirm" name="passwordConfirm" type="password" minlength="10" maxlength="128" autocomplete="new-password" placeholder="비밀번호를 한 번 더 입력" required /><small class="community-auth-note">이메일 인증과 비밀번호 찾기는 아직 제공하지 않습니다. 사용 가능한 이메일로 가입해 주세요.</small>` : ""}<button class="primary-button dialog-primary" type="submit">${registering ? "가입하고 로그인" : "로그인"}</button></form><button class="community-auth-switch" type="button" data-action="community-auth-mode" data-mode="${registering ? "login" : "register"}">${registering ? "이미 계정이 있나요? 로그인" : "처음이신가요? 계정 만들기"}</button>`;
+    if (!dialog.open) dialog.showModal();
+    content.querySelector(registering ? "#community-auth-name" : "#community-auth-email")?.focus();
   }
 
   function renderNotificationItems() {
@@ -164,7 +175,7 @@
       <div class="community-detail-layout"><article class="community-detail-main"><div class="community-detail-title"><div class="community-post-meta"><span class="community-type-badge type-${escapeHTML(post.type)}">${escapeHTML(typeNames[post.type] || "게시글")}</span><span>${escapeHTML(gameName(post.gameId))}</span></div><h1>${escapeHTML(post.title)}</h1><div class="community-post-meta"><span>${escapeHTML(post.author?.displayName || "게스트")}</span><time>${escapeHTML(formatDate(post.updatedAt || post.createdAt))}${post.updatedAt ? " · 수정됨" : ""}</time></div></div>
         <div class="community-detail-body">${escapeHTML(post.body)}</div>${post.tags?.length ? `<div class="community-tags">${post.tags.map((tag) => `<span>#${escapeHTML(tag)}</span>`).join("")}</div>` : ""}
         <div class="community-detail-actions"><button class="secondary-button ${post.liked ? "is-liked" : ""}" type="button" data-action="community-like" data-id="${escapeHTML(post.id)}">${post.liked ? "♥ 좋아요" : "♡ 좋아요"} ${post.likesCount || 0}</button><button class="secondary-button" type="button" data-action="community-report" data-id="${escapeHTML(post.id)}">신고</button>${post.mine ? `<a class="secondary-button" href="#/community/new?gameId=${encodeURIComponent(post.gameId)}&edit=${encodeURIComponent(post.id)}">수정</a><button class="secondary-button" type="button" data-action="community-delete" data-id="${escapeHTML(post.id)}">삭제</button>` : ""}</div>
-        <section class="community-comments"><div class="community-list-heading"><h2>댓글 <span>${post.commentCount || 0}</span></h2></div>${state.user ? `<form id="community-comment-form" data-post-id="${escapeHTML(post.id)}" class="community-comment-form"><label class="visually-hidden" for="community-comment-body">댓글</label><textarea id="community-comment-body" name="body" rows="3" maxlength="1000" placeholder="댓글을 입력하세요" required></textarea><button class="primary-button" type="submit">댓글 등록</button></form>` : `<div class="community-login-note"><p>댓글을 작성하려면 게스트 로그인이 필요합니다.</p><button class="primary-button" data-action="community-login">게스트 로그인</button></div>`}${renderComments(post.comments || [])}</section>
+        <section class="community-comments"><div class="community-list-heading"><h2>댓글 <span>${post.commentCount || 0}</span></h2></div>${state.user ? `<form id="community-comment-form" data-post-id="${escapeHTML(post.id)}" class="community-comment-form"><label class="visually-hidden" for="community-comment-body">댓글</label><textarea id="community-comment-body" name="body" rows="3" maxlength="1000" placeholder="댓글을 입력하세요" required></textarea><button class="primary-button" type="submit">댓글 등록</button></form>` : `<div class="community-login-note"><p>댓글을 쓰려면 로그인하세요.</p><button class="primary-button" data-action="community-login">로그인</button></div>`}${renderComments(post.comments || [])}</section>
       </article><aside class="community-detail-side">${official || `<section class="community-official community-no-source"><span class="page-eyebrow">COMMUNITY</span><h2>자유로운 이야기</h2><p>공식 공지에 연결된 게시글은 원문 링크와 선택한 분석 항목을 함께 표시합니다.</p></section>`}</aside></div>
     </main>`;
   }
@@ -190,7 +201,7 @@
 
   function renderEditor() {
     const { params, editId, post, official, newsItem } = getEditorContext();
-    if (!state.user) return `<main class="page-width game-page community-page"><section class="community-login-card"><span class="page-eyebrow">GUEST ACCOUNT</span><h1>게스트 로그인 후 글을 작성할 수 있어요</h1><p>게스트 계정을 만들면 이 브라우저에서 게시글과 댓글을 작성하고 반응을 남길 수 있습니다.</p><button class="primary-button" type="button" data-action="community-login">게스트로 계속하기</button></section></main>`;
+    if (!state.user) return `<main class="page-width game-page community-page"><section class="community-login-card"><span class="page-eyebrow">TODAYPATCH ACCOUNT</span><h1>로그인 후 글을 작성할 수 있어요</h1><p>계정을 만들면 게시글·댓글·알림을 이 기기와 다른 기기에서 이어서 이용할 수 있습니다.</p><button class="primary-button" type="button" data-action="community-login" data-mode="register">계정 만들기</button><button class="secondary-button" type="button" data-action="community-login">이미 계정이 있어요</button></section></main>`;
     if (editId && !post && state.loading) return `<main class="page-width game-page community-page"><div class="community-empty"><strong>게시글을 불러오고 있어요.</strong></div></main>`;
     if (editId && !post && state.error) return `<main class="page-width game-page community-page"><div class="community-empty"><strong>${escapeHTML(state.error)}</strong><a href="#/community">게시판으로 돌아가기</a></div></main>`;
     const gameId = post?.gameId || params.get("gameId") || state.gameId || "aion2";
@@ -360,13 +371,16 @@
     const id = button.dataset.id;
     try {
       if (action === "community-login") {
-        const result = await api("/api/community/guest", { method: "POST", body: {} });
-        state.user = result.user;
-        await loadNotifications();
-        state.error = "";
+        openAuthDialog(button.dataset.mode || "login");
+      } else if (action === "community-auth-mode") {
+        openAuthDialog(button.dataset.mode);
+      } else if (action === "community-logout") {
+        await api("/api/community/logout", { method: "POST", body: {} });
+        state.user = null;
+        state.notifications = [];
         context.render();
-        context.showToast?.(`게스트 계정 ${result.user.displayName}으로 로그인했습니다.`);
         if (context.isCommunityRoute?.()) await loadRoute();
+        context.showToast?.("로그아웃했습니다.");
       } else if (action === "community-type") {
         state.type = button.dataset.type || "";
         updateRouteFilters();
@@ -400,7 +414,7 @@
         await loadRoute();
       } else if (action === "community-like") {
         if (!state.user) {
-          context.showToast?.("좋아요를 누르려면 게스트 로그인이 필요합니다.");
+          context.showToast?.("좋아요를 누르려면 로그인해 주세요.");
           return;
         }
         await api(`/api/community/posts/${encodeURIComponent(id)}/like`, { method: "POST", body: {} });
@@ -417,7 +431,7 @@
         await loadRoute();
       } else if (action === "community-report") {
         if (!state.user) {
-          context.showToast?.("신고하려면 게스트 로그인이 필요합니다.");
+          context.showToast?.("신고하려면 로그인해 주세요.");
           return;
         }
         const dialog = document.querySelector("#app-dialog");
@@ -459,15 +473,34 @@
   }
 
   function ownsForm(form) {
-    return ["community-editor-form", "community-comment-form", "community-report-form"].includes(form.id);
+    return ["community-auth-form", "community-editor-form", "community-comment-form", "community-report-form"].includes(form.id);
   }
 
   async function handleSubmit(form) {
     const data = new FormData(form);
     try {
-      if (form.id === "community-editor-form") {
+      if (form.id === "community-auth-form") {
+        const mode = form.dataset.mode === "register" ? "register" : "login";
+        const password = String(data.get("password") || "");
+        const body = { email: String(data.get("email") || "").trim(), password };
+        if (mode === "register") {
+          if (password !== String(data.get("passwordConfirm") || "")) {
+            context.showToast?.("비밀번호 확인이 일치하지 않습니다.");
+            return;
+          }
+          body.displayName = String(data.get("displayName") || "").trim();
+        }
+        const result = await api(`/api/community/${mode}`, { method: "POST", body });
+        state.user = result.user;
+        state.error = "";
+        document.querySelector("#app-dialog")?.close();
+        await loadNotifications();
+        context.render();
+        context.showToast?.(mode === "register" ? "계정을 만들고 로그인했습니다." : "로그인했습니다.");
+        if (context.isCommunityRoute?.()) await loadRoute();
+      } else if (form.id === "community-editor-form") {
         if (!state.user) {
-          context.showToast?.("게스트 로그인 후 게시할 수 있습니다.");
+          context.showToast?.("로그인 후 게시할 수 있습니다.");
           return;
         }
         const tags = String(data.get("tags") || "").split(/[，,]/).map((tag) => tag.trim()).filter(Boolean);
@@ -498,7 +531,7 @@
         window.location.hash = linkToPost(result.post).slice(1);
       } else if (form.id === "community-comment-form") {
         if (!state.user) {
-          context.showToast?.("댓글을 작성하려면 게스트 로그인이 필요합니다.");
+          context.showToast?.("댓글을 작성하려면 로그인해 주세요.");
           return;
         }
         await api(`/api/community/posts/${encodeURIComponent(form.dataset.postId)}/comments`, { method: "POST", body: { body: String(data.get("body") || "").trim() } });

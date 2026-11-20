@@ -1,9 +1,11 @@
-const { randomUUID, createHash, timingSafeEqual } = require("node:crypto");
+const { randomUUID, createHash, randomBytes, scrypt, timingSafeEqual } = require("node:crypto");
+const { promisify } = require("node:util");
 const { Pool } = require("pg");
 
 const sessionCookie = "todaypatch_session";
 const categories = new Set(["free", "question", "guide", "discussion"]);
 const reportReasons = new Set(["spam", "abuse", "privacy", "copyright", "other"]);
+const scryptAsync = promisify(scrypt);
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.NEON_DATABASE_URL;
 
 const pool = globalThis.__todaypatchPool || new Pool({
@@ -15,6 +17,7 @@ const pool = globalThis.__todaypatchPool || new Pool({
 globalThis.__todaypatchPool = pool;
 
 let schemaPromise;
+let dummyPasswordHashPromise;
 
 async function ensureSchema() {
   if (!schemaPromise) {
@@ -22,8 +25,13 @@ async function ensureSchema() {
       await pool.query(`CREATE TABLE IF NOT EXISTS community_accounts (
         id uuid PRIMARY KEY,
         display_name text NOT NULL,
+        email text,
+        password_hash text,
         created_at timestamptz NOT NULL DEFAULT now()
       )`);
+      await pool.query("ALTER TABLE community_accounts ADD COLUMN IF NOT EXISTS email text");
+      await pool.query("ALTER TABLE community_accounts ADD COLUMN IF NOT EXISTS password_hash text");
+      await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS community_accounts_email_unique ON community_accounts (lower(email)) WHERE email IS NOT NULL");
       await pool.query(`CREATE TABLE IF NOT EXISTS community_sessions (
         token_hash char(64) PRIMARY KEY,
         account_id uuid NOT NULL REFERENCES community_accounts(id) ON DELETE CASCADE,
@@ -80,6 +88,12 @@ async function ensureSchema() {
         created_at timestamptz NOT NULL DEFAULT now(),
         read_at timestamptz
       )`);
+      await pool.query(`CREATE TABLE IF NOT EXISTS community_auth_attempts (
+        email_hash char(64) PRIMARY KEY,
+        attempts integer NOT NULL DEFAULT 0,
+        window_started_at timestamptz NOT NULL DEFAULT now(),
+        locked_until timestamptz
+      )`);
       await pool.query("CREATE INDEX IF NOT EXISTS community_posts_feed_idx ON community_posts (game_id, type, created_at DESC) WHERE deleted_at IS NULL AND hidden = false");
       await pool.query("CREATE INDEX IF NOT EXISTS community_comments_post_idx ON community_comments (post_id, created_at) WHERE deleted_at IS NULL");
       await pool.query("CREATE INDEX IF NOT EXISTS community_notifications_account_idx ON community_notifications (account_id, created_at DESC)");
@@ -125,7 +139,62 @@ function safeText(value, maxLength) {
 }
 
 function publicAccount(account) {
-  return account ? { id: account.id, displayName: account.display_name, createdAt: account.created_at } : null;
+  return account ? { id: account.id, displayName: account.display_name, createdAt: account.created_at, email: account.email || null } : null;
+}
+
+function normalizeEmail(value) {
+  return safeText(value, 254).toLowerCase();
+}
+
+function validateEmail(value) {
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function validatePassword(value) {
+  return typeof value === "string" && Array.from(value).length >= 10 && Array.from(value).length <= 128;
+}
+
+async function hashPassword(password) {
+  const salt = randomBytes(16);
+  const derived = await scryptAsync(password, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 });
+  return `scrypt$16384$${salt.toString("base64url")}$${Buffer.from(derived).toString("base64url")}`;
+}
+
+async function verifyPassword(password, encoded) {
+  const [algorithm, workFactor, saltValue, hashValue] = String(encoded || "").split("$");
+  if (algorithm !== "scrypt" || workFactor !== "16384" || !saltValue || !hashValue) return false;
+  try {
+    const expected = Buffer.from(hashValue, "base64url");
+    const actual = Buffer.from(await scryptAsync(password, Buffer.from(saltValue, "base64url"), expected.length, { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 }));
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
+}
+
+function emailHash(email) {
+  return createHash("sha256").update(email).digest("hex");
+}
+
+async function isAuthLocked(email) {
+  const result = await pool.query("SELECT locked_until > now() AS locked FROM community_auth_attempts WHERE email_hash=$1", [emailHash(email)]);
+  return Boolean(result.rows[0]?.locked);
+}
+
+async function recordAuthFailure(email) {
+  await pool.query(`INSERT INTO community_auth_attempts AS existing (email_hash, attempts, window_started_at)
+    VALUES ($1, 1, now())
+    ON CONFLICT (email_hash) DO UPDATE SET
+      attempts = CASE WHEN existing.window_started_at < now() - interval '15 minutes' THEN 1 ELSE existing.attempts + 1 END,
+      window_started_at = CASE WHEN existing.window_started_at < now() - interval '15 minutes' THEN now() ELSE existing.window_started_at END,
+      locked_until = CASE
+        WHEN existing.window_started_at < now() - interval '15 minutes' THEN NULL
+        WHEN existing.attempts + 1 >= 8 THEN now() + interval '15 minutes'
+        ELSE existing.locked_until END`, [emailHash(email)]);
+}
+
+async function clearAuthFailures(email) {
+  await pool.query("DELETE FROM community_auth_attempts WHERE email_hash=$1", [emailHash(email)]);
 }
 
 function asIso(value) {
@@ -209,14 +278,14 @@ function validatePost(input) {
 async function accountForRequest(req) {
   const token = parseCookies(req.headers.cookie)[sessionCookie];
   if (!token) return null;
-  const result = await pool.query(`SELECT a.id, a.display_name, a.created_at
+  const result = await pool.query(`SELECT a.id, a.display_name, a.created_at, a.email
     FROM community_sessions s JOIN community_accounts a ON a.id = s.account_id
     WHERE s.token_hash = $1 AND s.expires_at > now()`, [hashToken(token)]);
   return result.rows[0] || null;
 }
 
 function requireAccount(account, res) {
-  if (!account) error(res, 401, "게스트 로그인이 필요합니다.");
+  if (!account) error(res, 401, "로그인이 필요합니다.");
   return account;
 }
 
@@ -296,6 +365,75 @@ async function dispatch(req, res, route, account) {
 
   if (path === "/session" && method === "GET") {
     json(res, 200, { user: publicAccount(account) });
+    return;
+  }
+
+  if (path === "/register" && method === "POST") {
+    const input = await readJson(req);
+    const email = normalizeEmail(input.email);
+    const password = input.password;
+    const displayName = safeText(input.displayName, 24);
+    if (!validateEmail(email)) return error(res, 400, "올바른 이메일 주소를 입력해 주세요.");
+    if (!validatePassword(password)) return error(res, 400, "비밀번호는 10자 이상 128자 이하로 입력해 주세요.");
+    if (Array.from(displayName).length < 2) return error(res, 400, "닉네임을 2자 이상 입력해 주세요.");
+    if (account?.email) return error(res, 409, "이미 계정으로 로그인되어 있습니다. 로그아웃한 뒤 새 계정을 만들어 주세요.");
+
+    const passwordHash = await hashPassword(password);
+    const token = randomUUID();
+    const accountId = account?.id || randomUUID();
+    const client = await pool.connect();
+    let createdAccount;
+    try {
+      await client.query("BEGIN");
+      const saved = account
+        ? await client.query(`UPDATE community_accounts SET display_name=$1, email=$2, password_hash=$3
+            WHERE id=$4 AND email IS NULL RETURNING id, display_name, email, created_at`, [displayName, email, passwordHash, accountId])
+        : await client.query(`INSERT INTO community_accounts (id, display_name, email, password_hash)
+            VALUES ($1,$2,$3,$4) RETURNING id, display_name, email, created_at`, [accountId, displayName, email, passwordHash]);
+      if (!saved.rowCount) {
+        await client.query("ROLLBACK");
+        return error(res, 409, "이 게스트 계정은 이미 계정으로 전환되었습니다. 로그아웃하고 다시 시도해 주세요.");
+      }
+      createdAccount = saved.rows[0];
+      await client.query("INSERT INTO community_sessions (token_hash, account_id, expires_at) VALUES ($1,$2,now() + interval '30 days')", [hashToken(token), accountId]);
+      const oldToken = parseCookies(req.headers.cookie)[sessionCookie];
+      if (oldToken) await client.query("DELETE FROM community_sessions WHERE token_hash=$1", [hashToken(oldToken)]);
+      await client.query("COMMIT");
+    } catch (cause) {
+      await client.query("ROLLBACK");
+      if (cause.code === "23505") return error(res, 409, "이미 가입된 이메일 주소입니다. 로그인해 주세요.");
+      throw cause;
+    } finally { client.release(); }
+    json(res, account ? 200 : 201, { user: publicAccount(createdAccount) }, {
+      "Set-Cookie": `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secureCookie(req)}`,
+    });
+    return;
+  }
+
+  if (path === "/login" && method === "POST") {
+    const input = await readJson(req);
+    const email = normalizeEmail(input.email);
+    const password = input.password;
+    if (!validateEmail(email) || typeof password !== "string" || !password || Array.from(password).length > 128) {
+      return error(res, 400, "이메일과 비밀번호를 확인해 주세요.");
+    }
+    if (await isAuthLocked(email)) return error(res, 429, "로그인 시도가 너무 많습니다. 15분 뒤 다시 시도해 주세요.");
+    const result = await pool.query("SELECT id, display_name, email, password_hash, created_at FROM community_accounts WHERE lower(email)=$1 LIMIT 1", [email]);
+    const found = result.rows[0];
+    if (!dummyPasswordHashPromise) dummyPasswordHashPromise = hashPassword(randomUUID());
+    const passwordValid = found?.password_hash
+      ? await verifyPassword(password, found.password_hash)
+      : await verifyPassword(password, await dummyPasswordHashPromise);
+    if (!found?.password_hash || !passwordValid) {
+      await recordAuthFailure(email);
+      return error(res, 401, "이메일 또는 비밀번호가 올바르지 않습니다.");
+    }
+    await clearAuthFailures(email);
+    const token = randomUUID();
+    await pool.query("INSERT INTO community_sessions (token_hash, account_id, expires_at) VALUES ($1,$2,now() + interval '30 days')", [hashToken(token), found.id]);
+    json(res, 200, { user: publicAccount(found) }, {
+      "Set-Cookie": `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secureCookie(req)}`,
+    });
     return;
   }
 

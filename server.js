@@ -1,7 +1,8 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { randomUUID, timingSafeEqual } = require("node:crypto");
+const { randomUUID, createHash, randomBytes, scrypt, timingSafeEqual } = require("node:crypto");
+const { promisify } = require("node:util");
 
 const root = __dirname;
 const port = Number(process.env.PORT) || 4173;
@@ -9,6 +10,7 @@ const host = process.env.HOST || "127.0.0.1";
 const privateDir = path.join(root, ".private");
 const storePath = path.join(privateDir, "community.json");
 const sessionCookie = "todaypatch_session";
+const scryptAsync = promisify(scrypt);
 const categoryIds = new Set(["free", "question", "guide", "discussion"]);
 const categoryNames = { free: "자유게시판", question: "질문", guide: "공략", discussion: "토론" };
 const mimeTypes = {
@@ -19,8 +21,9 @@ const mimeTypes = {
   ".svg": "image/svg+xml",
 };
 
-let communityStore = { accounts: [], sessions: {}, posts: [], comments: [], reports: [], notifications: [] };
+let communityStore = { accounts: [], sessions: {}, posts: [], comments: [], reports: [], notifications: [], authFailures: {} };
 let persistQueue = Promise.resolve();
+let dummyPasswordHashPromise;
 
 function normalizeStore(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return communityStore;
@@ -31,6 +34,7 @@ function normalizeStore(value) {
     comments: Array.isArray(value.comments) ? value.comments : [],
     reports: Array.isArray(value.reports) ? value.reports : [],
     notifications: Array.isArray(value.notifications) ? value.notifications : [],
+    authFailures: value.authFailures && typeof value.authFailures === "object" && !Array.isArray(value.authFailures) ? value.authFailures : {},
   };
 }
 
@@ -84,12 +88,66 @@ function currentAccount(request) {
 }
 
 function publicAccount(account) {
-  return account ? { id: account.id, displayName: account.displayName, createdAt: account.createdAt } : null;
+  return account ? { id: account.id, displayName: account.displayName, createdAt: account.createdAt, email: account.email || null } : null;
+}
+
+function normalizeEmail(value) {
+  return safeText(value, 254).toLowerCase();
+}
+
+function validEmail(value) {
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function validPassword(value) {
+  return typeof value === "string" && Array.from(value).length >= 10 && Array.from(value).length <= 128;
+}
+
+async function hashPassword(password) {
+  const salt = randomBytes(16);
+  const derived = await scryptAsync(password, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 });
+  return `scrypt$16384$${salt.toString("base64url")}$${Buffer.from(derived).toString("base64url")}`;
+}
+
+async function verifyPassword(password, encoded) {
+  const [algorithm, workFactor, saltValue, hashValue] = String(encoded || "").split("$");
+  if (algorithm !== "scrypt" || workFactor !== "16384" || !saltValue || !hashValue) return false;
+  try {
+    const expected = Buffer.from(hashValue, "base64url");
+    const actual = Buffer.from(await scryptAsync(password, Buffer.from(saltValue, "base64url"), expected.length, { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 }));
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  } catch { return false; }
+}
+
+function authFailureKey(email) {
+  return createHash("sha256").update(email).digest("hex");
+}
+
+function isAuthLocked(email) {
+  const record = communityStore.authFailures[authFailureKey(email)];
+  return Boolean(record?.lockedUntil && Date.parse(record.lockedUntil) > Date.now());
+}
+
+function recordAuthFailure(email) {
+  const key = authFailureKey(email);
+  const now = Date.now();
+  const previous = communityStore.authFailures[key];
+  const inWindow = previous && now - Date.parse(previous.windowStartedAt) < 15 * 60 * 1000;
+  const attempts = inWindow ? (previous.attempts || 0) + 1 : 1;
+  communityStore.authFailures[key] = {
+    attempts,
+    windowStartedAt: inWindow ? previous.windowStartedAt : new Date(now).toISOString(),
+    lockedUntil: attempts >= 8 ? new Date(now + 15 * 60 * 1000).toISOString() : null,
+  };
+}
+
+function clearAuthFailures(email) {
+  delete communityStore.authFailures[authFailureKey(email)];
 }
 
 function requireAccount(request, response) {
   const account = currentAccount(request);
-  if (!account) sendError(response, 401, "게스트 로그인이 필요합니다.");
+  if (!account) sendError(response, 401, "로그인이 필요합니다.");
   return account;
 }
 
@@ -250,9 +308,94 @@ async function handleApi(request, response, requestUrl) {
     sendJson(response, 200, { user: publicAccount(account) });
     return;
   }
+  if (pathname === "/api/community/register" && method === "POST") {
+    const input = await readJson(request);
+    const email = normalizeEmail(input.email);
+    const password = input.password;
+    const displayName = safeText(input.displayName, 24);
+    if (!validEmail(email)) {
+      sendError(response, 400, "올바른 이메일 주소를 입력해 주세요.");
+      return;
+    }
+    if (!validPassword(password)) {
+      sendError(response, 400, "비밀번호는 10자 이상 128자 이하로 입력해 주세요.");
+      return;
+    }
+    if (displayName.length < 2) {
+      sendError(response, 400, "닉네임은 2자 이상 입력해 주세요.");
+      return;
+    }
+    if (communityStore.accounts.some((item) => item.email && item.email.toLowerCase() === email)) {
+      sendError(response, 409, "이미 가입된 이메일입니다. 로그인해 주세요.");
+      return;
+    }
+
+    const token = randomUUID();
+    const passwordHash = await hashPassword(password);
+    let accountRecord = account;
+    if (accountRecord) {
+      if (accountRecord.email) {
+        sendError(response, 409, "이미 계정으로 로그인되어 있습니다.");
+        return;
+      }
+      accountRecord.email = email;
+      accountRecord.passwordHash = passwordHash;
+      accountRecord.displayName = displayName;
+    } else {
+      accountRecord = {
+        id: randomUUID(),
+        email,
+        passwordHash,
+        displayName,
+        createdAt: new Date().toISOString(),
+      };
+      communityStore.accounts.push(accountRecord);
+    }
+    const oldToken = parseCookies(request.headers.cookie)[sessionCookie];
+    if (oldToken) delete communityStore.sessions[oldToken];
+    communityStore.sessions[token] = accountRecord.id;
+    clearAuthFailures(email);
+    await persistCommunityStore();
+    const secure = request.socket.encrypted || request.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
+    sendJson(response, account ? 200 : 201, { user: publicAccount(accountRecord) }, {
+      "Set-Cookie": `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`,
+    });
+    return;
+  }
+  if (pathname === "/api/community/login" && method === "POST") {
+    const input = await readJson(request);
+    const email = normalizeEmail(input.email);
+    const password = typeof input.password === "string" ? input.password : "";
+    if (!validEmail(email) || !password || password.length > 128) {
+      sendError(response, 400, "이메일과 비밀번호를 확인해 주세요.");
+      return;
+    }
+    if (isAuthLocked(email)) {
+      sendError(response, 429, "로그인 시도가 많습니다. 15분 후 다시 시도해 주세요.");
+      return;
+    }
+    const found = communityStore.accounts.find((item) => item.email && item.email.toLowerCase() === email);
+    if (!dummyPasswordHashPromise) dummyPasswordHashPromise = hashPassword(randomUUID());
+    const passwordMatches = await verifyPassword(password, found?.passwordHash || await dummyPasswordHashPromise);
+    if (!found || !passwordMatches) {
+      recordAuthFailure(email);
+      await persistCommunityStore();
+      sendError(response, 401, "이메일 또는 비밀번호가 올바르지 않습니다.");
+      return;
+    }
+    clearAuthFailures(email);
+    const token = randomUUID();
+    communityStore.sessions[token] = found.id;
+    await persistCommunityStore();
+    const secure = request.socket.encrypted || request.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
+    sendJson(response, 200, { user: publicAccount(found) }, {
+      "Set-Cookie": `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`,
+    });
+    return;
+  }
   if (pathname === "/api/community/notifications" && method === "GET") {
     if (!account) {
-      sendError(response, 401, "게스트 로그인이 필요합니다.");
+      sendError(response, 401, "로그인이 필요합니다.");
       return;
     }
     const notifications = communityStore.notifications.filter((item) => item.accountId === account.id).slice(0, 100).map((item) => ({
@@ -265,7 +408,7 @@ async function handleApi(request, response, requestUrl) {
   const notificationReadMatch = pathname.match(/^\/api\/community\/notifications\/([^/]+)\/read$/);
   if (notificationReadMatch && method === "POST") {
     if (!account) {
-      sendError(response, 401, "게스트 로그인이 필요합니다.");
+      sendError(response, 401, "로그인이 필요합니다.");
       return;
     }
     const notification = communityStore.notifications.find((item) => item.id === decodeURIComponent(notificationReadMatch[1]) && item.accountId === account.id);

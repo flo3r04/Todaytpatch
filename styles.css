@@ -574,10 +574,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .theme-toggle { width: 34px; padding: 0; }
   .theme-toggle span, .dashboard-link span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .dashboard-link { width: 34px; padding: 0; }
-  .community-account { min-width: 62px; padding-inline: 5px; font-size: 0; }
-  .community-account::after { content: "게스트"; font-size: 9px; }
+  .community-account { min-width: 48px; padding-inline: 5px; font-size: 0; }
+  .community-account::after { content: "계정"; font-size: 9px; }
   .community-login-button { width: 52px; padding: 0 4px; font-size: 0; }
   .community-login-button::after { content: "로그인"; font-size: 9px; }
+  .community-logout-button { width: 52px; padding: 0 4px; font-size: 0; }
+  .community-logout-button::after { content: "나가기"; font-size: 9px; }
   .detail-layout { grid-template-columns: minmax(0, 1fr) 245px; gap: 13px; }
   .calendar-layout { grid-template-columns: minmax(0, 1fr); }
 }
@@ -690,10 +692,21 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 .community-login-button,
+.community-logout-button,
 .community-account { min-height: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; }
 .community-login-button { color: var(--brand); cursor: pointer; }
 .community-login-button:hover { border-color: var(--brand); }
-.community-account { border-style: dashed; }
+.community-logout-button { color: var(--muted); cursor: pointer; }
+.community-logout-button:hover { border-color: #efc9cf; color: #bd5260; }
+.community-account { max-width: 120px; overflow: hidden; border-style: dashed; text-overflow: ellipsis; white-space: nowrap; }
+.community-auth-form { margin-top: 15px; display: grid; gap: 9px; }
+.community-auth-form label { margin-top: 3px; font-size: 12px; font-weight: 600; }
+.community-auth-form input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 13px; }
+.community-auth-form input:focus { border-color: var(--brand); outline: 3px solid rgba(69, 104, 245, .12); }
+.community-auth-form .dialog-primary { width: 100%; margin-top: 5px; }
+.community-auth-note { color: var(--muted-light); font-size: 11px; line-height: 1.6; }
+.community-auth-switch { width: 100%; margin-top: 12px; padding: 8px; border: 0; background: transparent; color: var(--brand); font-size: 12px; cursor: pointer; }
+.community-auth-switch:hover { text-decoration: underline; }
 .community-page { padding-top: 34px; padding-bottom: 58px; }
 .community-hero { margin-bottom: 20px; display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
 .community-hero h1, .community-editor h1 { margin: 5px 0; font-size: 30px; letter-spacing: -.05em; }
@@ -834,7 +847,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .community-comment-form button { justify-self: end; }
   .community-preview-item { grid-template-columns: auto minmax(0, 1fr); }
   .community-preview-item small { grid-column: 2; }
-  .community-account, .community-login-button { width: 32px; min-height: 32px; padding: 0 4px; overflow: hidden; font-size: 0; }
+  .community-account, .community-login-button, .community-logout-button { width: 32px; min-height: 32px; padding: 0 4px; overflow: hidden; font-size: 0; }
   .community-account::after { width: 7px; height: 7px; border: 2px solid var(--brand); border-radius: 50%; content: ""; }
   .community-login-button::after { content: "로그인"; font-size: 8px; }
+  .community-logout-button::after { content: "나가기"; font-size: 8px; }
 }
