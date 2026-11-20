@@ -225,6 +225,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .page-heading { margin: 23px 0 20px; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .page-heading h1 { margin: 6px 0 5px; font-size: 30px; line-height: 1.3; letter-spacing: -.055em; }
 .page-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.feed-page-heading { margin: 15px 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.feed-page-heading h1 { margin: 0; font-size: 27px; line-height: 1.35; letter-spacing: -.05em; }
+.feed-result-count { min-height: 26px; padding: 4px 9px; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
 .data-state { margin-bottom: 4px; display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .data-state i { width: 6px; height: 6px; border-radius: 50%; background: #a7b1bf; }
 .demo-note { min-height: 38px; margin: 0 0 18px; padding: 8px 11px; display: flex; align-items: center; gap: 9px; border: 1px solid #e6eaf1; border-radius: 7px; background: rgba(255, 255, 255, .68); }
@@ -240,6 +243,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .feed-section { margin-top: 20px; }
 .feed-tools { margin-bottom: 19px; padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.listing-page:not(.dokkaebi-page) .feed-section { margin-top: 0; }
+.listing-page:not(.dokkaebi-page) .feed-tools { margin-bottom: 14px; }
+.listing-page:not(.dokkaebi-page) .filter-row { display: none; }
 .filter-row { min-height: 28px; margin-top: 9px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .filter-chip { min-height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; transition: color 130ms ease, background 130ms ease; }
 .filter-chip:hover { background: #f5f7fb; color: var(--ink); }
@@ -657,6 +663,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .game-page { min-height: calc(100vh - 125px); padding-top: 24px; padding-bottom: 42px; }
   .page-heading { margin: 19px 0 15px; align-items: flex-start; flex-direction: column; gap: 9px; }
   .page-heading h1 { font-size: 26px; }
+  .feed-page-heading { margin: 12px 0 13px; }
+  .feed-page-heading h1 { font-size: 24px; }
   .data-state { margin: 0; }
   .demo-note { align-items: flex-start; }
   .demo-icon { margin-top: 1px; }
@@ -664,7 +672,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .section-heading h2 { font-size: 16px; }
   .section-heading p { max-width: 260px; line-height: 1.6; }
   .feed-section { margin-top: 15px; }
+  .listing-page:not(.dokkaebi-page) .feed-section { margin-top: 0; }
   .feed-tools { padding: 10px; }
+  .listing-page:not(.dokkaebi-page) .filter-row { display: flex; }
   .filter-row { gap: 2px; }
   .filter-chip { padding-inline: 8px; }
   .news-main { min-height: 90px; padding: 12px 43px 20px 13px; }

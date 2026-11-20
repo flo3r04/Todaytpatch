@@ -613,6 +613,12 @@ function renderGameIntro(title, description, crumb = title) {
     <div class="page-heading"><div><span class="page-eyebrow">AION2 GAME HUB</span><h1>${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p></div>${crumb === "아이온2" ? `<span class="data-state"><i></i>최근 수집 · ${escapeHTML(crawledDate)}</span>` : ""}</div>`;
 }
 
+function renderFeedIntro(title) {
+  return `
+    <div class="breadcrumb"><a href="#/">게임 찾기</a><span aria-hidden="true">›</span><a href="#/aion2">아이온2</a></div>
+    <div class="feed-page-heading"><h1>${escapeHTML(title)}</h1><span class="feed-result-count" id="news-count" aria-label="검색 결과 수" aria-live="polite"></span></div>`;
+}
+
 function renderGameHome() {
   return renderFeedPage("news");
 }
@@ -665,16 +671,16 @@ function renderDokkaebiDetail(id) {
 }
 
 function renderFilterBar(kind) {
-  const pageCategories = kind === "news" ? categories : ["전체"];
+  const filterChips = kind === "news"
+    ? `<div class="filter-row" aria-label="정보 유형 필터">${categories.map((category) => `<button class="filter-chip ${state.filter === category ? "selected" : ""}" data-action="filter" data-filter="${category}" aria-pressed="${state.filter === category}">${category}</button>`).join("")}</div>`
+    : "";
   return `
     <div class="feed-tools">
       <label class="search-field news-search-field">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg>
         <input id="news-search" type="search" value="${escapeHTML(state.query)}" placeholder="제목, 요약, 키워드 검색" autocomplete="off" aria-label="아이온2 정보 검색" />
       </label>
-      <div class="filter-row" aria-label="정보 유형 필터">
-        ${pageCategories.map((category) => `<button class="filter-chip ${state.filter === category ? "selected" : ""}" data-action="filter" data-filter="${category}" aria-pressed="${state.filter === category}">${category}</button>`).join("")}
-      </div>
+      ${filterChips}
     </div>`;
 }
 
@@ -987,18 +993,18 @@ function renderDashboardPage() {
 }
 
 function renderFeedPage(kind) {
+  if (kind !== "news") state.filter = "전체";
   const page = {
-    news: ["아이온2 전체 소식", "공지, 업데이트, CM 아지트 게시물을 날짜순으로 확인하세요."],
-    notices: ["아이온2 공식 공지", "공식 안내와 서비스 공지를 원문 링크와 함께 확인하세요."],
-    updates: ["아이온2 업데이트", "최신 패치 노트와 업데이트 본문을 확인하세요."],
-    "cm-stories": ["아이온2 CM 아지트", "아이온2 CM 아지트의 소식과 운영 안내를 확인하세요."],
+    news: "전체 소식",
+    notices: "공지",
+    updates: "업데이트",
+    "cm-stories": "CM 아지트",
   }[kind];
   return `
     <main class="page-width game-page listing-page">
-      ${renderGameIntro(page[0], page[1], page[0])}
+      ${renderFeedIntro(page)}
       <section class="content-section feed-section">
         ${renderFilterBar(kind)}
-        <div class="section-heading list-heading"><div><h2>${page[0]}</h2><p>검색 결과 <span id="news-count"></span></p></div></div>
         <div class="news-list" id="news-list"></div>
         <div class="empty-state" id="empty-state" hidden><span aria-hidden="true">⌕</span><strong>게시물이 없어요.</strong><p>다른 단어를 입력하거나 다음 크롤링 후 다시 확인해 주세요.</p></div>
       </section>
@@ -1542,7 +1548,7 @@ function visibleNews() {
   if (kind === "notices") items = items.filter((item) => item.sourceKey === "notice");
   if (kind === "updates") items = items.filter((item) => item.sourceKey === "update");
   if (kind === "cm-stories") items = items.filter(isAionCmStory);
-  if (state.filter !== "전체") items = items.filter((item) => displayNewsCategory(item) === state.filter);
+  if (kind === "news" && state.filter !== "전체") items = items.filter((item) => displayNewsCategory(item) === state.filter);
   const query = state.query.trim().toLocaleLowerCase("ko-KR");
   if (query) items = items.filter((item) => `${item.title} ${item.excerpt} ${item.summary || ""} ${item.analysis || ""} ${(item.keyPoints || []).join(" ")} ${displayNewsCategory(item)} ${displayNewsSource(item)} ${item.meta}`.toLocaleLowerCase("ko-KR").includes(query));
   return items;
