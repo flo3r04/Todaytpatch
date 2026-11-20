@@ -2,9 +2,12 @@
   "name": "todaypatch-web",
   "version": "0.1.0",
   "private": true,
-  "description": "오늘의 패치 아이온2 정보 큐레이션 UI 프로토타입",
+  "description": "오늘의 패치 멀티게임 소식과 커뮤니티 UI 프로토타입",
   "scripts": {
     "crawl": "node scripts/crawl-aion2.js",
     "start": "node server.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
   }
 }

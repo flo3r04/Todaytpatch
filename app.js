@@ -227,7 +227,7 @@ function currentRoute() {
 }
 
 function routeParts(route = currentRoute()) {
-  return route.replace(/^#\/?/, "").split("/").filter(Boolean);
+  return route.replace(/^#\/?/, "").split("?")[0].split("/").filter(Boolean);
 }
 
 function dokkaebiRouteCategory(route = currentRoute()) {
@@ -238,6 +238,12 @@ function routeKind(route = currentRoute()) {
   const parts = routeParts(route);
   if (!parts.length) return "home";
   if (parts[0] === "dashboard") return "dashboard";
+  if (parts[0] === "community") {
+    if (parts[1] === "new") return "community-new";
+    if (parts[1] === "post" && parts[2]) return "community-detail";
+    if (parts[1] === "moderation") return "community-moderation";
+    return "community";
+  }
   if (parts[0] === "game" && gameCatalog.some((item) => item.id === parts[1])) {
     if (parts[1] === "dokkaebi-world") return parts[2] === "news" && parts[3] ? "dokkaebi-detail" : "dokkaebi-hub";
     return "game-hub";
@@ -258,7 +264,8 @@ function detailId() {
 
 function renderNotificationControl() {
   const notifications = storedNotifications().filter((item) => !/CM 이야기|CM 아지트/u.test(item.category || "") || item.gameId === game.id);
-  const unreadCount = notifications.filter((item) => !item.read).length;
+  const communityNotificationCount = window.todaypatchCommunity?.unreadNotificationCount() || 0;
+  const unreadCount = notifications.filter((item) => !item.read).length + communityNotificationCount;
   const browserSupported = "Notification" in window;
   const browserPermission = browserSupported ? Notification.permission : "unsupported";
   const browserEnabled = readStorage("todaypatch.browserNotifications", false);
@@ -267,7 +274,8 @@ function renderNotificationControl() {
     : browserPermission === "denied"
       ? `<span class="notification-setting-note">브라우저 설정에서 알림 권한을 허용해 주세요.</span>`
       : `<button class="notification-setting-button" type="button" data-action="toggle-browser-notifications">브라우저 알림 ${browserEnabled ? "끄기" : "켜기"}</button>`;
-  const list = notifications.length
+  const communityItems = window.todaypatchCommunity?.renderNotificationItems() || "";
+  const list = notifications.length || communityItems
     ? `<div class="notification-list">${notifications.slice(0, 30).map((item) => {
       const newsId = item.newsId || item.id;
       const exists = newsItems.some((news) => news.id === newsId);
@@ -275,8 +283,8 @@ function renderNotificationControl() {
       const target = exists ? "" : 'target="_blank" rel="noopener noreferrer"';
       const notificationCategory = String(item.category || "새 소식").replace(/CM 이야기/g, "CM 아지트");
       return `<a class="notification-item ${item.read ? "read" : "unread"}" href="${escapeHTML(href)}" ${target} data-action="open-notification" data-id="${escapeHTML(item.id)}"><span class="notification-dot" aria-hidden="true"></span><span class="notification-copy"><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.gameId === game.id ? game.name : item.gameId)} · ${escapeHTML(notificationCategory)} · ${escapeHTML(item.date || "")}</small>${item.body ? `<small>${escapeHTML(item.body)}</small>` : ""}</span></a>`;
-    }).join("")}</div>`
-    : `<div class="notification-empty"><strong>새 알림이 없습니다.</strong><p>팔로우한 게임의 새 글은 크롤링 후 페이지를 방문하면 여기에 표시됩니다.</p></div>`;
+    }).join("")}${communityItems}</div>`
+    : `<div class="notification-empty"><strong>새 알림이 없습니다.</strong><p>팔로우한 게임의 새 소식과 커뮤니티 반응 알림이 여기에 표시됩니다.</p></div>`;
 
   return `<div class="notification-wrap">
     <button id="notification-toggle" class="notification-toggle" type="button" data-action="toggle-notifications" aria-label="알림${unreadCount ? `, 읽지 않은 알림 ${unreadCount}개` : ""}" aria-expanded="${state.notificationsOpen}" title="알림">
@@ -294,20 +302,28 @@ function renderNotificationControl() {
 function renderHeader() {
   const kind = routeKind();
   const currentParts = routeParts();
-  const isDokkaebi = currentParts[0] === "game" && currentParts[1] === "dokkaebi-world";
+  const isCommunityRoute = kind.startsWith("community");
+  const communityGameId = new URLSearchParams(currentRoute().split("?")[1] || "").get("gameId");
+  const communityGame = gameCatalog.find((item) => item.id === communityGameId) || game;
+  const isDokkaebi = (currentParts[0] === "game" && currentParts[1] === "dokkaebi-world") || (isCommunityRoute && communityGameId === "dokkaebi-world");
+  const communityOnly = isCommunityRoute && !["aion2", "dokkaebi-world"].includes(communityGameId || "aion2");
   const inGame = !["home", "dashboard", "game-hub"].includes(kind);
-  const selectedGame = isDokkaebi || kind === "game-hub" ? gameCatalog.find((item) => item.id === currentParts[1]) : null;
+  const selectedGame = isDokkaebi || kind === "game-hub" ? (isCommunityRoute ? communityGame : gameCatalog.find((item) => item.id === currentParts[1])) : null;
   const isDark = document.documentElement.dataset.theme === "dark";
   const themeLabel = isDark ? "라이트 모드" : "다크 모드";
   const themeIcon = isDark
     ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>'
     : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.7 8.7 0 1 0 20.4 15.2Z"/></svg>';
-  const links = isDokkaebi ? [
+  const links = communityOnly ? [
+    ["게임 찾기", "#/", "game-list"],
+    ["커뮤니티", `#/community?gameId=${encodeURIComponent(communityGame.id)}`, "community"],
+  ] : isDokkaebi ? [
     ["개요", "#/game/dokkaebi-world", "dokebi-home"],
     ["전체 소식", "#/game/dokkaebi-world/news", "dokebi-news"],
     ["공지", "#/game/dokkaebi-world/notices", "dokebi-notices"],
     ["업데이트", "#/game/dokkaebi-world/updates", "dokebi-updates"],
     ["공략", "#/game/dokkaebi-world/guides", "dokebi-guides"],
+    ["커뮤니티", "#/community?gameId=dokkaebi-world", "community"],
   ] : [
     ["전체 소식", "#/aion2", "game-home"],
     ["공지", "#/aion2/notices", "notices"],
@@ -315,6 +331,7 @@ function renderHeader() {
     ["CM 아지트", "#/aion2/cm-stories", "cm-stories"],
     ["할 일", "#/aion2/tasks", "tasks"],
     ["북마크", "#/aion2/bookmarks", "bookmarks"],
+    ["커뮤니티", "#/community?gameId=aion2", "community"],
   ];
   const detailItem = kind === "detail" ? newsItems.find((item) => item.id === detailId()) : null;
   const activeDetailRoute = { notice: "notices", update: "updates", "cm-story": "cm-stories" }[detailItem?.sourceKey];
@@ -326,19 +343,20 @@ function renderHeader() {
           <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
           <span>오늘의 패치</span>
         </a>
-        ${inGame ? `<a class="header-game" href="${isDokkaebi ? escapeHTML(selectedGame.route) : "#/aion2"}"><span class="header-divider" aria-hidden="true"></span>${isDokkaebi ? `<img class="header-game-icon" src="${escapeHTML(selectedGame.icon)}" alt="" />` : ""}${escapeHTML(isDokkaebi ? selectedGame.name : game.name)}</a>
+        ${inGame ? `<a class="header-game" href="${isDokkaebi ? escapeHTML(selectedGame.route) : isCommunityRoute ? escapeHTML(communityGame.route || "#/community") : "#/aion2"}"><span class="header-divider" aria-hidden="true"></span>${isDokkaebi ? `<img class="header-game-icon" src="${escapeHTML(selectedGame.icon)}" alt="" />` : ""}${escapeHTML(isDokkaebi ? selectedGame.name : isCommunityRoute ? communityGame.name : game.name)}</a>
           <button class="mobile-menu-button" data-action="mobile-menu" aria-label="게임 메뉴 열기" aria-expanded="false">☰</button>
-          <nav class="main-nav" id="main-nav" aria-label="${escapeHTML(isDokkaebi ? selectedGame.name : game.name)} 메뉴">
+          <nav class="main-nav" id="main-nav" aria-label="${escapeHTML(isCommunityRoute ? communityGame.name : selectedGame?.name || game.name)} 메뉴">
             ${links.map(([label, href, routeKey]) => {
               const segment = currentParts[2] || "";
-              const dokkaebiActive = isDokkaebi && (routeKey === "dokebi-home" ? !segment : routeKey === "dokebi-news" ? segment === "news" || kind === "dokkaebi-detail" : routeKey === `dokebi-${segment}`);
-              const active = isDokkaebi ? dokkaebiActive : kind === routeKey || (routeKey === "game-home" && kind === "news") || (kind === "detail" && routeKey === activeDetailRoute);
+              const dokkaebiActive = isDokkaebi && !isCommunityRoute && (routeKey === "dokebi-home" ? !segment : routeKey === "dokebi-news" ? segment === "news" || kind === "dokkaebi-detail" : routeKey === `dokebi-${segment}`);
+              const active = routeKey === "community" ? isCommunityRoute : isDokkaebi ? dokkaebiActive : kind === routeKey || (routeKey === "game-home" && kind === "news") || (kind === "detail" && routeKey === activeDetailRoute);
               return `<a class="nav-link ${active ? "active" : ""}" href="${href}" ${active ? 'aria-current="page"' : ""}>${label}</a>`;
             }).join("")}
           </nav>` : selectedGame ? `<span class="header-caption">${escapeHTML(selectedGame.name)}</span>` : ""}
         <div class="header-controls ${inGame ? "in-game" : ""}">
           <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
           ${renderNotificationControl()}
+          ${window.todaypatchCommunity?.renderAccountControl() || ""}
           <a class="dashboard-link ${kind === "dashboard" ? "active" : ""}" href="#/dashboard" ${kind === "dashboard" ? 'aria-current="page"' : ""} aria-label="대시보드"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.7-3.2 3-5 6.5-5s5.8 1.8 6.5 5"/></svg><span>대시보드</span></a>
         </div>
       </div>
@@ -364,8 +382,15 @@ function renderHome() {
         ${renderPopularGuides()}
         ${renderPopularPosts()}
         ${renderFollowedNewsPanel()}
+        ${renderCommunityHomePanel()}
       </section>
     </main>`;
+}
+
+function renderCommunityHomePanel() {
+  const followed = followedGameIds();
+  const preview = window.todaypatchCommunity?.renderPreview(followed, 4) || "";
+  return `<section class="home-content-panel home-community-panel" aria-labelledby="community-home-heading"><div class="home-panel-heading"><div><span class="home-guide-eyebrow">COMMUNITY</span><h2 id="community-home-heading">팔로우한 게임 커뮤니티</h2></div><a href="#/community?gameId=aion2">게시판 보기 →</a></div>${followed.length ? preview : `<div class="home-section-empty"><strong>게임을 팔로우해 보세요.</strong><p>팔로우한 게임의 새 커뮤니티 글을 여기에 모아 보여드립니다.</p><a href="#/community?gameId=aion2">아이온2 커뮤니티 둘러보기 →</a></div>`}</section>`;
 }
 
 function renderFollowedGameShortcuts() {
@@ -895,6 +920,10 @@ function renderDashboardPage() {
           ${bookmarks.length ? `<div class="news-list dashboard-news-list">${bookmarks.slice(0, 4).map(renderNewsCard).join("")}</div>` : `<div class="dashboard-empty"><p>저장한 게시물이 없습니다.</p><a href="#/aion2/news">전체 소식 보기 <span aria-hidden="true">→</span></a></div>`}
         </section>
       </div>
+      <section class="dashboard-section dashboard-community" aria-labelledby="dashboard-community-title">
+        <div class="dashboard-section-heading"><div><span class="page-eyebrow">FOLLOWED COMMUNITY</span><h2 id="dashboard-community-title">팔로우한 게임 새 게시글</h2><p>선택한 게임의 새 글을 한곳에서 확인하세요.</p></div><a class="dashboard-more" href="#/community?gameId=aion2">커뮤니티 열기 →</a></div>
+        ${followed.length ? (window.todaypatchCommunity?.renderPreview(followed.map((item) => item.id), 5) || "") : `<div class="dashboard-empty"><p>게임을 팔로우하면 새 커뮤니티 글이 여기에 표시됩니다.</p><a href="#/">게임 찾아보기 →</a></div>`}
+      </section>
       ${renderDashboardCalendar(calendarEvents)}
       <section class="dashboard-section dashboard-posts" aria-labelledby="dashboard-posts-title">
         <div class="dashboard-section-heading"><div><span class="page-eyebrow">MY POSTS</span><h2 id="dashboard-posts-title">내가 작성한 글</h2><p>이 브라우저에 저장되어 나에게만 보이는 글입니다.</p></div><button class="primary-button" type="button" data-action="toggle-post-form" aria-expanded="false">글 작성하기</button></div>
@@ -1052,6 +1081,7 @@ function renderDetail(id) {
           <div class="detail-title-row"><div><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><h1>${escapeHTML(item.title)}</h1></div><button class="bookmark-button detail-bookmark ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg></button></div>
           <section class="article-panel summary-panel"><div class="panel-heading"><h2>전체 내용 요약</h2><span class="summary-badge">전체 흐름</span></div><p class="summary-copy">${renderSentenceLines(summary)}</p></section>
           <section class="article-panel analysis-panel"><div class="panel-heading"><h2>AI 분석</h2><span class="example-label">이용자 관점</span></div><p class="analysis-copy">${renderSentenceLines(analysis)}</p>${detailedSections}<a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 링크 열기 <span aria-hidden="true">↗</span></a></section>
+          <section class="article-panel community-notice-actions"><div><span class="page-eyebrow">DISCUSS THIS NOTICE</span><h2>이 공지에 대해 이야기해 보세요</h2><p>공식 원문과 필요한 분석 항목을 연결해 질문하거나 토론할 수 있습니다.</p></div><div><a class="secondary-button" href="#/community/new?gameId=aion2&type=question&newsId=${encodeURIComponent(item.id)}">이 공지로 질문하기</a><a class="primary-button" href="#/community/new?gameId=aion2&type=discussion&newsId=${encodeURIComponent(item.id)}">토론 시작하기</a></div></section>
           <section class="article-panel"><div class="panel-heading"><h2>수집 정보</h2><span class="example-label">공식 게시판</span></div><dl class="info-list"><div><dt>게시판</dt><dd>${escapeHTML(displayNewsSource(item))}</dd></div><div><dt>게시일</dt><dd>${escapeHTML(item.date)}</dd></div><div><dt>수정일</dt><dd>${item.updatedAt ? escapeHTML(formatDisplayDate(item.updatedAt)) : "수정 기록 없음"}</dd></div></dl></section>
           <section class="article-panel action-panel"><div><strong>정보가 정확하지 않나요?</strong><p>날짜, 수치, 직업 정보나 출처 문제를 알려주세요.</p></div><button class="secondary-button" data-action="report">정보 신고</button></section>
           <a class="back-link" href="#/aion2/${sourceRoute}">← ${escapeHTML(displayNewsCategory(item))} 목록</a>
@@ -1451,6 +1481,7 @@ function render() {
   else if (kind === "bookmarks") page = renderBookmarksPage();
   else if (kind === "dashboard") page = renderDashboardPage();
   else if (kind === "detail") page = renderDetail(detailId());
+  else if (kind.startsWith("community")) page = window.todaypatchCommunity?.renderPage(kind) || renderHome();
   else page = renderHome();
   const chatbot = ["dokkaebi-hub", "dokkaebi-detail"].includes(kind) ? "" : renderChatbot();
   app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}${chatbot}`;
@@ -1498,10 +1529,16 @@ app.addEventListener("click", (event) => {
     return;
   }
   const { action, id } = button.dataset;
+  if (window.todaypatchCommunity?.isAction(action)) {
+    event.preventDefault();
+    void window.todaypatchCommunity.handleAction(action, button);
+    return;
+  }
   if (action === "toggle-notifications") {
     state.notificationsOpen = !state.notificationsOpen;
     app.querySelector(".notification-popover").hidden = !state.notificationsOpen;
     button.setAttribute("aria-expanded", String(state.notificationsOpen));
+    if (state.notificationsOpen) window.todaypatchCommunity?.refreshNotifications().then(render);
   }
   if (action === "open-notification") {
     event.preventDefault();
@@ -1519,6 +1556,7 @@ app.addEventListener("click", (event) => {
   }
   if (action === "mark-all-notifications-read") {
     writeStorage("todaypatch.notifications", storedNotifications().map((item) => ({ ...item, read: true })));
+    window.todaypatchCommunity?.markAllNotificationsRead().then(render).catch((error) => showToast(error.message));
     render();
   }
   if (action === "toggle-browser-notifications") {
@@ -1682,6 +1720,7 @@ app.addEventListener("click", (event) => {
 });
 
 app.addEventListener("input", (event) => {
+  window.todaypatchCommunity?.handleInput(event.target);
   if (event.target.id === "news-search") {
     state.query = event.target.value;
     drawNewsList();
@@ -1697,6 +1736,7 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("change", (event) => {
+  window.todaypatchCommunity?.handleChange(event.target);
   if (event.target.matches('[data-action="skip-tutorial"]')) writeStorage("todaypatch.skipTutorial", event.target.checked);
 });
 
@@ -1744,6 +1784,11 @@ app.addEventListener("contextmenu", (event) => {
 window.addEventListener("resize", closeFollowContextMenu);
 
 app.addEventListener("submit", (event) => {
+  if (window.todaypatchCommunity?.ownsForm(event.target)) {
+    event.preventDefault();
+    void window.todaypatchCommunity.handleSubmit(event.target);
+    return;
+  }
   if (event.target.id === "chatbot-form") {
     event.preventDefault();
     const question = String(new FormData(event.target).get("question") || "").trim();
@@ -1786,8 +1831,20 @@ window.addEventListener("hashchange", () => {
   state.dokkaebiQuery = "";
   state.gameSearchFocused = false;
   render();
+  window.todaypatchCommunity?.loadRoute();
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
+window.todaypatchCommunity?.init({
+  getGameCatalog: () => gameCatalog,
+  getNewsItems: () => newsItems,
+  getRoute: () => currentRoute(),
+  getRouteParts: () => routeParts(),
+  getKind: () => routeKind(),
+  isCommunityRoute: () => routeKind().startsWith("community"),
+  render,
+  showToast,
+});
 state.dokkaebiFilter = dokkaebiRouteCategory();
 render();
+window.todaypatchCommunity?.bootstrap();
