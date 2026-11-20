@@ -344,23 +344,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .footer-brand { color: var(--ink); font-size: 11px; font-weight: 600; }
 
 .app-dialog { width: min(430px, calc(100% - 30px)); max-width: none; padding: 25px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); box-shadow: var(--shadow); }
-.tutorial-dialog { width: min(500px, calc(100% - 30px)); padding: 24px; }
-.tutorial-topline { position: relative; min-height: 20px; padding-right: 34px; }
+.tutorial-dialog { width: min(620px, calc(100% - 32px)); max-height: min(700px, calc(100dvh - 36px)); overflow-y: auto; overscroll-behavior: contain; padding: 32px clamp(22px, 4vw, 36px); }
+.tutorial-topline { position: relative; min-height: 24px; padding-right: 38px; }
+.tutorial-topline .page-eyebrow { font-size: 12px; }
 .tutorial-topline .dialog-close { top: -7px; right: -7px; }
-.tutorial-progress { height: 4px; margin: 13px 0 21px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
+.tutorial-progress { height: 5px; margin: 16px 0 25px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
 .tutorial-progress span { height: 100%; display: block; border-radius: inherit; background: var(--brand); transition: width 180ms ease; }
-.tutorial-step-number { color: var(--brand); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
-.tutorial-dialog h2 { margin: 7px 0 9px; font-size: 23px; letter-spacing: -.04em; }
-.tutorial-dialog > p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
-.tutorial-tip { margin-top: 16px; padding: 11px 12px; display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); }
-.tutorial-tip > span { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 700; }
-.tutorial-tip p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
-.tutorial-actions { margin-top: 19px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.tutorial-skip { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; cursor: pointer; }
-.tutorial-skip input { width: 15px; height: 15px; margin: 0; accent-color: var(--brand); }
+.tutorial-step-number { color: var(--brand); font-size: 12px; font-weight: 700; letter-spacing: .12em; }
+.tutorial-dialog h2 { margin: 9px 0 12px; font-size: 28px; letter-spacing: -.04em; }
+.tutorial-dialog > p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.9; }
+.tutorial-tip { margin-top: 20px; padding: 15px 16px; display: flex; align-items: flex-start; gap: 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-muted); }
+.tutorial-tip > span { width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 13px; font-weight: 700; }
+.tutorial-tip p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
+.tutorial-actions { margin-top: 25px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.tutorial-skip { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; cursor: pointer; }
+.tutorial-skip input { width: 17px; height: 17px; margin: 0; accent-color: var(--brand); }
 .tutorial-buttons { display: flex; align-items: center; gap: 7px; }
 .tutorial-buttons .secondary-button,
-.tutorial-buttons .primary-button { min-height: 34px; padding-inline: 12px; font-size: 11px; }
+.tutorial-buttons .primary-button { min-height: 40px; padding-inline: 16px; font-size: 13px; }
 .app-dialog::backdrop { background: rgba(30, 40, 58, .27); backdrop-filter: blur(2px); }
 #dialog-content { position: relative; }
 .dialog-close { position: absolute; top: -7px; right: -7px; width: 29px; height: 29px; border: 0; border-radius: 6px; background: var(--page); color: var(--muted); font-size: 20px; cursor: pointer; }
@@ -653,10 +654,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .post-delete-button { top: 8px; right: 7px; min-height: 28px; padding-inline: 7px; }
   .post-composer { padding: 12px; }
   .post-composer-actions span { font-size: 10px; }
-  .tutorial-dialog { padding: 19px; }
-  .tutorial-dialog h2 { font-size: 20px; }
-  .tutorial-dialog > p { font-size: 13px; }
-  .tutorial-actions { align-items: flex-start; flex-direction: column; }
+  .tutorial-dialog { width: calc(100% - 24px); max-height: calc(100dvh - 24px); padding: 23px 20px; }
+  .tutorial-dialog h2 { font-size: 23px; }
+  .tutorial-dialog > p { font-size: 15px; }
+  .tutorial-tip { margin-top: 17px; padding: 13px; }
+  .tutorial-tip p { font-size: 13px; }
+  .tutorial-actions { align-items: center; flex-wrap: wrap; }
+  .tutorial-skip { font-size: 13px; }
   .tutorial-buttons { align-self: flex-end; }
   .game-result { gap: 9px; padding-inline: 10px; }
   .game-result-open { gap: 10px; }
