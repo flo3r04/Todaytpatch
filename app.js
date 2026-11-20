@@ -56,7 +56,7 @@ function applyTheme(theme) {
   const safeTheme = theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = safeTheme;
   const themeColor = document.querySelector('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = safeTheme === "dark" ? "#0d1420" : "#f7f8fb";
+  if (themeColor) themeColor.content = safeTheme === "dark" ? "#0d1420" : "#f7f8f7";
 }
 
 applyTheme(readStorage("todaypatch.theme", "light"));
@@ -1505,7 +1505,7 @@ function openDialog(kind) {
   const content = app.querySelector("#dialog-content");
   if (!dialog || !content) return;
   if (kind === "login") {
-    content.innerHTML = `<button class="dialog-close" data-action="close-dialog" aria-label="닫기">×</button><span class="page-eyebrow">TODAYPATCH ACCOUNT</span><h2 id="dialog-title">로그인</h2><p>북마크와 할 일은 현재 이 브라우저에 저장됩니다. 계정 로그인과 기기 간 동기화는 아직 연결되지 않았습니다.</p><button class="primary-button dialog-primary" data-action="close-dialog">확인</button>`;
+    content.innerHTML = `<button class="dialog-close" data-action="close-dialog" aria-label="닫기">×</button><span class="page-eyebrow">TODAYPATCH ACCOUNT</span><h2 id="dialog-title">계정 로그인</h2><p>계정에 로그인하면 커뮤니티 게시글·댓글·알림을 여러 기기에서 이용할 수 있습니다. 팔로우, 북마크, 읽음 상태와 할 일은 현재 브라우저에 저장됩니다.</p><button class="primary-button dialog-primary" type="button" data-action="community-login">로그인 또는 계정 만들기</button>`;
   } else {
     content.innerHTML = `<button class="dialog-close" data-action="close-dialog" aria-label="닫기">×</button><span class="page-eyebrow">REPORT INFORMATION</span><h2 id="dialog-title">정보 신고</h2><p>잘못된 날짜·수치·직업 정보나 오래된 공략을 알려주세요.</p><form id="report-form"><label for="report-reason">신고 내용</label><select id="report-reason" name="reason"><option>날짜 또는 기간이 달라요</option><option>직업·스킬 정보가 달라요</option><option>패치 버전이 오래됐어요</option><option>출처 링크가 열리지 않아요</option><option>기타</option></select><label for="report-detail">자세한 내용</label><textarea id="report-detail" name="detail" rows="3" placeholder="확인한 내용을 적어주세요."></textarea><button class="primary-button dialog-primary" type="submit">신고 내용 확인</button></form><span class="dialog-note">프로토타입에서는 신고가 저장되지 않습니다.</span>`;
   }
