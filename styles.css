@@ -50,6 +50,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .brand-mark span:nth-child(2) { width: 72%; }
 .header-caption { position: absolute; left: 50%; color: var(--muted-light); font-size: 12px; transform: translateX(-50%); white-space: nowrap; }
 .header-game { display: inline-flex; align-items: center; gap: 17px; color: var(--ink); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.header-game-icon { width: 27px; height: 27px; flex: 0 0 auto; border-radius: 6px; object-fit: cover; }
 .header-divider { width: 1px; height: 23px; display: inline-block; background: var(--line-strong); }
 .main-nav { display: flex; align-items: center; gap: 25px; margin-left: auto; }
 .nav-link { padding: 25px 0 23px; border-bottom: 2px solid transparent; color: var(--muted); font-size: 12px; transition: color 140ms ease, border-color 140ms ease; }
@@ -125,9 +126,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .home-game-shortcut-icon { width: 56px; height: 56px; display: block; overflow: hidden; border-radius: 13px; background: #07111d; box-shadow: 0 3px 8px rgba(20, 30, 50, .12); }
 .home-game-shortcut-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .home-shortcut-empty { margin: 20px 0; color: var(--muted-light); font-size: 12px; text-align: center; }
-.home-content-grid { width: 100%; margin-top: 23px; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(310px, .85fr); align-items: start; gap: 15px; }
+.home-content-grid { width: 100%; margin-top: 23px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 15px; }
 .home-right-stack { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .home-content-panel { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.home-patch-brief-panel, .home-release-panel { min-height: 204px; }
+.home-patch-brief-panel { display: flex; flex-direction: column; }
+.patch-brief-copy { min-height: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+.patch-brief-copy > strong { display: -webkit-box; overflow: hidden; font-size: 14px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.patch-brief-copy > p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.patch-brief-copy > a { margin-top: auto; color: var(--brand); font-size: 11px; font-weight: 600; }
+.patch-brief-copy > a:hover { text-decoration: underline; }
 .home-panel-heading { margin-bottom: 11px; display: flex; align-items: center; justify-content: space-between; gap: 9px; }
 .home-panel-heading h2 { margin: 4px 0 0; font-size: 15px; letter-spacing: -.035em; }
 .home-panel-heading > span { flex: 0 0 auto; color: var(--muted-light); font-size: 10px; }
@@ -165,6 +173,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .release-list-tag { padding: 2px 5px; border-radius: 3px; background: #24313e; color: #76d1f1; font-size: 9px; }
 .release-upcoming-list time { color: #9da7b4; font-variant-numeric: tabular-nums; }
 .home-guide-row { padding: 10px 2px; display: grid; gap: 5px; border-top: 1px solid var(--line); }
+.home-guides-panel, .home-popular-posts-panel { min-height: 310px; display: flex; flex-direction: column; }
+.home-guides-panel .home-guide-list, .home-popular-posts-panel .home-guide-list { min-height: 0; flex: 1; }
+.home-guides-panel .home-guide-row, .home-popular-posts-panel .home-guide-row { min-height: 0; flex: 1; }
+.home-followed-news { grid-column: 1 / -1; }
+.home-followed-news .home-post-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; }
 .home-guide-category { color: var(--muted-light); font-size: 9px; }
 .home-guide-row > strong { overflow: hidden; color: var(--ink); font-size: 12px; line-height: 1.45; text-overflow: ellipsis; }
 .home-guide-row > p { margin: 0; display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -337,13 +350,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .tutorial-progress { height: 4px; margin: 13px 0 21px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
 .tutorial-progress span { height: 100%; display: block; border-radius: inherit; background: var(--brand); transition: width 180ms ease; }
 .tutorial-step-number { color: var(--brand); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
-.tutorial-dialog h2 { margin: 7px 0 9px; font-size: 21px; letter-spacing: -.04em; }
-.tutorial-dialog > p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.85; }
+.tutorial-dialog h2 { margin: 7px 0 9px; font-size: 23px; letter-spacing: -.04em; }
+.tutorial-dialog > p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
 .tutorial-tip { margin-top: 16px; padding: 11px 12px; display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); }
 .tutorial-tip > span { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 700; }
-.tutorial-tip p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.tutorial-tip p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .tutorial-actions { margin-top: 19px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.tutorial-skip { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; cursor: pointer; }
+.tutorial-skip { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; cursor: pointer; }
 .tutorial-skip input { width: 15px; height: 15px; margin: 0; accent-color: var(--brand); }
 .tutorial-buttons { display: flex; align-items: center; gap: 7px; }
 .tutorial-buttons .secondary-button,
@@ -591,6 +604,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .home-content-grid { grid-template-columns: 1fr; gap: 12px; }
   .home-content-panel { padding: 13px; }
   .home-right-stack { gap: 12px; }
+  .home-guides-panel, .home-popular-posts-panel { min-height: 0; }
+  .home-followed-news .home-post-list { grid-template-columns: 1fr; }
   .game-page { min-height: calc(100vh - 125px); padding-top: 24px; padding-bottom: 42px; }
   .page-heading { margin: 19px 0 15px; align-items: flex-start; flex-direction: column; gap: 9px; }
   .page-heading h1 { font-size: 26px; }
@@ -639,8 +654,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .post-composer { padding: 12px; }
   .post-composer-actions span { font-size: 10px; }
   .tutorial-dialog { padding: 19px; }
-  .tutorial-dialog h2 { font-size: 18px; }
-  .tutorial-dialog > p { font-size: 12px; }
+  .tutorial-dialog h2 { font-size: 20px; }
+  .tutorial-dialog > p { font-size: 13px; }
   .tutorial-actions { align-items: flex-start; flex-direction: column; }
   .tutorial-buttons { align-self: flex-end; }
   .game-result { gap: 9px; padding-inline: 10px; }

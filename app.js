@@ -4,8 +4,25 @@ const game = { id: "aion2", name: "아이온2", aliases: "aion2 아이온2", ico
 const categories = ["전체", "공지", "업데이트", "CM 아지트"];
 const gameCatalog = [
   game,
-  { id: "dokkaebi-world", name: "도깨비의 세계", icon: "./assets/dokkaebi-world.png", route: "#/game/dokkaebi-world" },
-  { id: "temppal", name: "템빨", displayTitle: "템빨: 오버기어드", icon: "./assets/temppal.png", route: "#/game/temppal", upcoming: true, releaseDate: "2026-11-26T00:00:00+09:00" },
+  { id: "dokkaebi-world", name: "도깨비의 세계", aliases: "도깨비의 세계 도깨비 dokkaebi dokev", icon: "./assets/dokkaebi-world.png", route: "#/game/dokkaebi-world" },
+  { id: "temppal", name: "템빨", aliases: "템빨 오버기어드 temppal", displayTitle: "템빨: 오버기어드", icon: "./assets/temppal.png", route: "#/game/temppal", upcoming: true, releaseDate: "2026-11-26T00:00:00+09:00" },
+];
+const dokkaebiNewsItems = [
+  {
+    id: "dokkaebi-overview", category: "공지", source: "도깨비의 세계 · 예시 정보", date: "예시 콘텐츠", meta: "세계관 · 게임 소개",
+    title: "도깨비의 세계 공개 정보 모아보기", excerpt: "게임 소개와 세계관 등 공개 정보를 한곳에서 찾아볼 수 있도록 정리하는 페이지입니다.",
+    summary: "도깨비의 세계에 관한 공개 정보와 안내를 모아보는 페이지 구성 예시입니다.", keyPoints: ["공개 정보 검색", "새 소식과 게임 안내 모아보기"],
+  },
+  {
+    id: "dokkaebi-starter-guide", category: "공략", source: "도깨비의 세계 · 예시 공략", date: "예시 콘텐츠", meta: "입문 · 기본 정보",
+    title: "도깨비의 세계 입문 가이드", excerpt: "처음 시작할 때 필요한 기본 정보와 자주 찾는 내용을 모으는 가이드 예시입니다.",
+    summary: "입문자를 위한 기본 가이드 페이지 예시입니다.", keyPoints: ["입문 정보", "기본 조작과 콘텐츠", "자주 묻는 질문"],
+  },
+  {
+    id: "dokkaebi-news-placeholder", category: "업데이트", source: "도깨비의 세계 · 예시 정보", date: "예시 콘텐츠", meta: "게임 소식",
+    title: "도깨비의 세계 새 소식", excerpt: "공지와 업데이트가 연결되면 이 목록에서 제목과 내용을 검색할 수 있습니다.",
+    summary: "도깨비의 세계 새 소식 목록 구성 예시입니다.", keyPoints: ["공식 데이터 연동 대기"],
+  },
 ];
 const isAionNewsItem = (item) => (item?.gameId || game.id) === game.id;
 const isAionCmStory = (item) => isAionNewsItem(item)
@@ -14,7 +31,7 @@ const displayNewsCategory = (item) => isAionCmStory(item) ? "CM 아지트" : ite
 const displayNewsSource = (item) => isAionCmStory(item)
   ? String(item.source || "아이온2 공식 CM 아지트").replace(/CM 이야기/g, "CM 아지트")
   : item.source;
-const state = { filter: "전체", query: "", gameQuery: "", gameSearchFocused: false, notificationsOpen: false, tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [] };
+const state = { filter: "전체", query: "", gameQuery: "", dokkaebiQuery: "", dokkaebiFilter: "전체", gameSearchFocused: false, notificationsOpen: false, tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [] };
 const app = document.querySelector("#app");
 let releaseCountdownTimer = null;
 
@@ -213,11 +230,18 @@ function routeParts(route = currentRoute()) {
   return route.replace(/^#\/?/, "").split("/").filter(Boolean);
 }
 
+function dokkaebiRouteCategory(route = currentRoute()) {
+  return ({ notices: "공지", updates: "업데이트", guides: "공략" })[routeParts(route)[2]] || "전체";
+}
+
 function routeKind(route = currentRoute()) {
   const parts = routeParts(route);
   if (!parts.length) return "home";
   if (parts[0] === "dashboard") return "dashboard";
-  if (parts[0] === "game" && gameCatalog.some((item) => item.id === parts[1])) return "game-hub";
+  if (parts[0] === "game" && gameCatalog.some((item) => item.id === parts[1])) {
+    if (parts[1] === "dokkaebi-world") return parts[2] === "news" && parts[3] ? "dokkaebi-detail" : "dokkaebi-hub";
+    return "game-hub";
+  }
   if (parts[0] === "aion2") {
     if (parts[1] === "news" && parts[2]) return "detail";
     if (["news", "notices", "updates", "cm-stories", "tasks", "bookmarks"].includes(parts[1])) return parts[1];
@@ -228,6 +252,7 @@ function routeKind(route = currentRoute()) {
 
 function detailId() {
   const parts = routeParts();
+  if (parts[0] === "game" && parts[1] === "dokkaebi-world" && parts[2] === "news") return parts[3];
   return parts[0] === "aion2" ? parts[2] : undefined;
 }
 
@@ -268,14 +293,22 @@ function renderNotificationControl() {
 
 function renderHeader() {
   const kind = routeKind();
+  const currentParts = routeParts();
+  const isDokkaebi = currentParts[0] === "game" && currentParts[1] === "dokkaebi-world";
   const inGame = !["home", "dashboard", "game-hub"].includes(kind);
-  const selectedGame = kind === "game-hub" ? gameCatalog.find((item) => item.id === routeParts()[1]) : null;
+  const selectedGame = isDokkaebi || kind === "game-hub" ? gameCatalog.find((item) => item.id === currentParts[1]) : null;
   const isDark = document.documentElement.dataset.theme === "dark";
   const themeLabel = isDark ? "라이트 모드" : "다크 모드";
   const themeIcon = isDark
     ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>'
     : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.7 8.7 0 1 0 20.4 15.2Z"/></svg>';
-  const links = [
+  const links = isDokkaebi ? [
+    ["개요", "#/game/dokkaebi-world", "dokebi-home"],
+    ["전체 소식", "#/game/dokkaebi-world/news", "dokebi-news"],
+    ["공지", "#/game/dokkaebi-world/notices", "dokebi-notices"],
+    ["업데이트", "#/game/dokkaebi-world/updates", "dokebi-updates"],
+    ["공략", "#/game/dokkaebi-world/guides", "dokebi-guides"],
+  ] : [
     ["전체 소식", "#/aion2", "game-home"],
     ["공지", "#/aion2/notices", "notices"],
     ["업데이트", "#/aion2/updates", "updates"],
@@ -293,11 +326,13 @@ function renderHeader() {
           <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
           <span>오늘의 패치</span>
         </a>
-        ${inGame ? `<a class="header-game" href="#/aion2"><span class="header-divider" aria-hidden="true"></span>아이온2</a>
+        ${inGame ? `<a class="header-game" href="${isDokkaebi ? escapeHTML(selectedGame.route) : "#/aion2"}"><span class="header-divider" aria-hidden="true"></span>${isDokkaebi ? `<img class="header-game-icon" src="${escapeHTML(selectedGame.icon)}" alt="" />` : ""}${escapeHTML(isDokkaebi ? selectedGame.name : game.name)}</a>
           <button class="mobile-menu-button" data-action="mobile-menu" aria-label="게임 메뉴 열기" aria-expanded="false">☰</button>
-          <nav class="main-nav" id="main-nav" aria-label="아이온2 메뉴">
-            ${links.map(([label, href, route]) => {
-              const active = kind === route || (route === "game-home" && kind === "news") || (kind === "detail" && route === activeDetailRoute);
+          <nav class="main-nav" id="main-nav" aria-label="${escapeHTML(isDokkaebi ? selectedGame.name : game.name)} 메뉴">
+            ${links.map(([label, href, routeKey]) => {
+              const segment = currentParts[2] || "";
+              const dokkaebiActive = isDokkaebi && (routeKey === "dokebi-home" ? !segment : routeKey === "dokebi-news" ? segment === "news" || kind === "dokkaebi-detail" : routeKey === `dokebi-${segment}`);
+              const active = isDokkaebi ? dokkaebiActive : kind === routeKey || (routeKey === "game-home" && kind === "news") || (kind === "detail" && routeKey === activeDetailRoute);
               return `<a class="nav-link ${active ? "active" : ""}" href="${href}" ${active ? 'aria-current="page"' : ""}>${label}</a>`;
             }).join("")}
           </nav>` : selectedGame ? `<span class="header-caption">${escapeHTML(selectedGame.name)}</span>` : ""}
@@ -324,11 +359,11 @@ function renderHome() {
       </section>
       ${renderFollowedGameShortcuts()}
       <section class="home-content-grid" aria-label="팔로우한 게임 소식과 공략">
+        ${renderPatchBriefPanel()}
+        ${renderUpcomingReleases()}
+        ${renderPopularGuides()}
+        ${renderPopularPosts()}
         ${renderFollowedNewsPanel()}
-        <div class="home-right-stack">
-          ${renderUpcomingReleases()}
-          ${renderPopularGuides()}
-        </div>
       </section>
     </main>`;
 }
@@ -354,6 +389,14 @@ function renderFollowedNewsPanel() {
   return `<section class="home-content-panel home-followed-news" aria-labelledby="followed-news-heading"><div class="home-panel-heading"><div><span class="home-guide-eyebrow">FOLLOWED GAMES</span><h2 id="followed-news-heading">팔로우한 게임 게시글</h2></div><span>${posts.length}건</span></div>${posts.length
     ? `<div class="home-post-list">${posts.map((item) => `<a class="home-post-row" href="#/aion2/news/${encodeURIComponent(item.id)}" data-action="record-article-view" data-id="${escapeHTML(item.id)}"><div class="home-post-meta"><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><span>${escapeHTML(item.date || "")}</span></div><strong>${escapeHTML(item.title)}</strong><span class="home-post-game">${escapeHTML(gameCatalog.find((entry) => entry.id === (item.gameId || game.id))?.name || game.name)} · 게시물 보기 →</span></a>`).join("")}</div>`
     : `<div class="home-section-empty"><strong>새 글이 아직 없어요.</strong><p>${escapeHTML(emptyMessage)}</p></div>`}</section>`;
+}
+
+function renderPatchBriefPanel() {
+  const item = newsItems.find((entry) => isAionNewsItem(entry) && entry.sourceKey === "update")
+    || newsItems.find(isAionNewsItem);
+  if (!item) return `<section class="home-content-panel home-patch-brief-panel"><div class="home-panel-heading"><div><span class="home-guide-eyebrow">TODAY'S PATCH</span><h2>오늘의 패치 브리핑</h2></div></div><div class="home-section-empty"><strong>새 패치 소식을 준비 중이에요.</strong><p>다음 크롤링 후 주요 업데이트를 이곳에서 확인할 수 있습니다.</p></div></section>`;
+  const summary = item.summary || item.excerpt || "새 업데이트의 주요 내용을 확인해 보세요.";
+  return `<section class="home-content-panel home-patch-brief-panel" aria-labelledby="patch-brief-heading"><div class="home-panel-heading"><div><span class="home-guide-eyebrow">TODAY'S PATCH</span><h2 id="patch-brief-heading">오늘의 패치 브리핑</h2></div><span>최신 업데이트</span></div><div class="patch-brief-copy"><div class="home-post-meta"><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><span>${escapeHTML(item.date || "")}</span></div><strong>${escapeHTML(item.title)}</strong><p>${escapeHTML(summary)}</p><a href="#/aion2/news/${encodeURIComponent(item.id)}" data-action="record-article-view" data-id="${escapeHTML(item.id)}">패치 내용 확인 <span aria-hidden="true">→</span></a></div></section>`;
 }
 
 function releaseCountdownParts(releaseDate, now = Date.now()) {
@@ -430,6 +473,22 @@ function renderPopularGuides() {
     : `<div class="home-section-empty"><strong>공략 정보를 준비 중이에요.</strong><p>크롤링된 게시물에서 방법·스킬·세팅 관련 정보가 수집되면 여기에 표시됩니다.</p></div>`}</section>`;
 }
 
+function popularPostEntries() {
+  const storedCounts = readStorage("todaypatch.articleViews", {});
+  const viewCounts = storedCounts && typeof storedCounts === "object" && !Array.isArray(storedCounts) ? storedCounts : {};
+  return newsItems.filter(isAionNewsItem).map((item) => ({
+    item,
+    score: Math.min(50, Number(viewCounts[item.id]) || 0) * 2 + Number(isSaved(item.id)) * 4 + Number(isRead(item.id)),
+  })).sort((left, right) => right.score - left.score || String(right.item.postedAt || "").localeCompare(String(left.item.postedAt || ""))).slice(0, 4);
+}
+
+function renderPopularPosts() {
+  const entries = popularPostEntries();
+  return `<section class="home-content-panel home-popular-posts-panel" aria-labelledby="popular-posts-heading"><div class="home-panel-heading"><div><span class="home-guide-eyebrow">POPULAR POSTS</span><h2 id="popular-posts-heading">인기 게시글</h2></div><span>열람 · 저장 · 최신순</span></div>${entries.length
+    ? `<div class="home-guide-list">${entries.map(({ item }) => `<a class="home-guide-row home-popular-post-row" href="#/aion2/news/${encodeURIComponent(item.id)}" data-action="record-article-view" data-id="${escapeHTML(item.id)}"><span class="home-guide-category">${escapeHTML(displayNewsCategory(item))} · ${escapeHTML(item.date || "")}</span><strong>${escapeHTML(item.title)}</strong><p>${escapeHTML(item.summary || item.excerpt || "게시물 핵심 내용을 확인해 보세요.")}</p><small>${escapeHTML(displayNewsSource(item))}</small></a>`).join("")}</div>`
+    : `<div class="home-section-empty"><strong>게시글을 준비 중이에요.</strong><p>새 글을 수집하면 인기 게시글에 표시됩니다.</p></div>`}</section>`;
+}
+
 function updateReleaseCountdowns() {
   app.querySelectorAll("[data-release-countdown]").forEach((element) => {
     const parts = releaseCountdownParts(element.dataset.releaseAt);
@@ -491,6 +550,7 @@ function renderGameHome() {
 function renderCatalogGamePage() {
   const item = gameCatalog.find((entry) => entry.id === routeParts()[1]);
   if (!item) return `<main class="page-width not-found"><h1>게임을 찾을 수 없어요.</h1><a class="primary-button" href="#/">게임 찾기로 돌아가기</a></main>`;
+  if (item.id === "dokkaebi-world") return renderDokkaebiPage();
   const followed = isGameFollowed(item.id);
   return `
     <main class="page-width game-page game-hub-page">
@@ -499,6 +559,39 @@ function renderCatalogGamePage() {
       <section class="game-hub-card"><img src="${escapeHTML(item.icon)}" alt="" /><div><strong>${escapeHTML(item.name)}</strong><p>${item.upcoming ? "출시 예정" : "게임 소식 연동 준비 중"}</p></div><button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="${followed ? "toggle-follow" : "follow-game"}" data-game-id="${escapeHTML(item.id)}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button></section>
       <div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>현재 공지·업데이트 크롤링은 아이온2에 연결되어 있습니다. 다른 게임의 소식 데이터는 준비 중입니다.</p></div>
     </main>`;
+}
+
+function renderDokkaebiPage() {
+  const item = gameCatalog.find((entry) => entry.id === "dokkaebi-world");
+  const followed = isGameFollowed(item.id);
+  const category = state.dokkaebiFilter;
+  const heading = category === "전체" ? "도깨비의 세계 소식" : `도깨비의 세계 ${category}`;
+  return `
+    <main class="page-width game-page listing-page dokkaebi-page">
+      <div class="breadcrumb"><a href="#/">게임 찾기</a><span aria-hidden="true">›</span><span>${escapeHTML(item.name)}</span>${category === "전체" ? "" : `<span aria-hidden="true">›</span><span>${escapeHTML(category)}</span>`}</div>
+      <div class="page-heading"><div><span class="page-eyebrow">DOKKAEBI WORLD GAME HUB</span><h1>${escapeHTML(heading)}</h1><p>도깨비의 세계 게임 정보와 소식을 검색하고 분류해 보세요.</p></div></div>
+      <section class="game-hub-card"><img src="${escapeHTML(item.icon)}" alt="" /><div><strong>${escapeHTML(item.name)}</strong><p>게임 소식과 공략을 검색할 수 있습니다.</p></div><button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="${followed ? "toggle-follow" : "follow-game"}" data-game-id="${escapeHTML(item.id)}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button></section>
+      <div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>공식 데이터 연동 전입니다. 아래는 검색과 페이지 구성을 위한 예시 콘텐츠입니다.</p></div>
+      <section class="content-section feed-section">
+        <div class="feed-tools">
+          <label class="search-field news-search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg><input id="dokkaebi-search" type="search" value="${escapeHTML(state.dokkaebiQuery)}" placeholder="도깨비의 세계 정보 검색" autocomplete="off" aria-label="도깨비의 세계 정보 검색" /></label>
+          <div class="filter-row" aria-label="도깨비의 세계 정보 유형 필터">${["전체", "공지", "업데이트", "공략"].map((label) => `<button class="filter-chip ${category === label ? "selected" : ""}" type="button" data-action="dokkaebi-filter" data-filter="${label}" aria-pressed="${category === label}">${label}</button>`).join("")}</div>
+        </div>
+        <div class="section-heading list-heading"><div><h2>${escapeHTML(heading)}</h2><p>검색 결과 <span id="dokkaebi-count"></span></p></div></div>
+        <div class="news-list" id="dokkaebi-news-list"></div>
+        <div class="empty-state" id="dokkaebi-empty-state" hidden><span aria-hidden="true">⌕</span><strong>검색 결과가 없어요.</strong><p>다른 단어를 입력하거나 정보 유형을 바꿔 보세요.</p></div>
+      </section>
+    </main>`;
+}
+
+function renderDokkaebiNewsCard(item) {
+  return `<article class="news-card"><a class="news-main" href="#/game/dokkaebi-world/news/${encodeURIComponent(item.id)}" aria-label="${escapeHTML(item.title)} 상세 보기"><div class="news-topline"><span class="category-pill category-${categoryClass(item.category)}">${escapeHTML(item.category)}</span><span class="news-source">${escapeHTML(item.source)} · ${escapeHTML(item.date)}</span></div><h3>${escapeHTML(item.title)}</h3><p class="news-excerpt">${escapeHTML(item.excerpt)}</p><div class="news-meta">${escapeHTML(item.meta)}</div></a></article>`;
+}
+
+function renderDokkaebiDetail(id) {
+  const item = dokkaebiNewsItems.find((entry) => entry.id === id);
+  if (!item) return `<main class="page-width not-found"><h1>정보를 찾을 수 없어요.</h1><a class="primary-button" href="#/game/dokkaebi-world/news">도깨비의 세계 소식으로 돌아가기</a></main>`;
+  return `<main class="page-width game-page detail-page"><div class="breadcrumb"><a href="#/">게임 찾기</a><span aria-hidden="true">›</span><a href="#/game/dokkaebi-world">도깨비의 세계</a><span aria-hidden="true">›</span><span>${escapeHTML(item.category)}</span></div><div class="page-heading"><div><span class="page-eyebrow">DOKKAEBI WORLD</span><h1>${escapeHTML(item.title)}</h1><p>${escapeHTML(item.excerpt)}</p></div></div><div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>공식 데이터 연동 전 페이지 구성 예시입니다.</p></div><article class="article-panel"><div class="panel-heading"><h2>내용 요약</h2><span class="example-label">예시 콘텐츠</span></div><p class="summary-copy">${escapeHTML(item.summary)}</p>${item.keyPoints.length ? `<ul class="key-point-list">${item.keyPoints.map((point) => `<li>${escapeHTML(point)}</li>`).join("")}</ul>` : ""}<div class="info-list"><div><dt>정보 유형</dt><dd>${escapeHTML(item.category)}</dd></div><div><dt>출처 표시</dt><dd>${escapeHTML(item.source)}</dd></div></div><a class="back-link" href="#/game/dokkaebi-world/news">← 도깨비의 세계 정보 목록</a></article></main>`;
 }
 
 function renderFilterBar(kind) {
@@ -516,7 +609,7 @@ function renderFilterBar(kind) {
 }
 
 function categoryClass(category) {
-  return category === "공지" ? "notice" : category === "CM 아지트" ? "cm" : "update";
+  return category === "공지" ? "notice" : category === "CM 아지트" || category === "CM 이야기" ? "cm" : category === "공략" || category === "가이드" ? "guide" : category === "이벤트" ? "event" : "update";
 }
 
 function renderNewsCard(item) {
@@ -1236,7 +1329,7 @@ function renderChatbot() {
 
 const tutorialSteps = [
   { title: "게임을 찾아 팔로우하세요", body: "검색창에서 게임을 찾고 팔로우하면 검색창 아래에 게임 아이콘 바로가기가 생깁니다. 아이콘을 누르면 게임 페이지로 이동하고, 우클릭하거나 길게 누르면 팔로우를 해제할 수 있어요.", tip: "출시 예정 게임은 남은 시간이 표시된 카운트다운에서 확인할 수 있습니다." },
-  { title: "새 소식을 확인하세요", body: "아이온2의 공지, 업데이트, CM 아지트에서 최신 글을 확인할 수 있어요. 게시글을 열면 AI 요약과 항목별 분석, 공식 원문 링크가 표시됩니다.", tip: "읽은 글은 목록에서 읽음 표시로 구분됩니다." },
+  { title: "새 소식을 확인하세요", body: "게임별 메뉴에서 공지, 업데이트와 공략을 검색할 수 있어요. 아이온2 게시글에서는 AI 요약과 항목별 분석, 공식 원문 링크도 확인할 수 있습니다.", tip: "읽은 아이온2 글은 목록에서 읽음 표시로 구분됩니다." },
   { title: "북마크와 게임을 관리하세요", body: "게시글은 북마크로 저장하고, 대시보드에서 팔로우한 게임과 저장한 글을 관리하세요. 팔로우한 게임에 새 글이 올라오면 알림 메뉴에서 확인할 수 있어요.", tip: "대시보드에서 팔로우한 게임의 이벤트와 보상 마감 일정도 확인할 수 있습니다." },
 ];
 
@@ -1306,11 +1399,18 @@ function drawNewsList() {
   if (empty) empty.hidden = items.length > 0;
 }
 
-function matchingGames(query) {
-  const normalizedQuery = String(query || "").trim().toLocaleLowerCase("ko-KR");
-  if (!normalizedQuery) return [];
-  return gameCatalog.filter((item) => `${item.name} ${item.displayTitle || ""} ${item.aliases || ""} ${item.id}`
-    .toLocaleLowerCase("ko-KR").includes(normalizedQuery));
+function drawDokkaebiNewsList() {
+  const list = app.querySelector("#dokkaebi-news-list");
+  if (!list) return;
+  let items = [...dokkaebiNewsItems];
+  if (state.dokkaebiFilter !== "전체") items = items.filter((item) => item.category === state.dokkaebiFilter);
+  const query = state.dokkaebiQuery.trim().toLocaleLowerCase("ko-KR");
+  if (query) items = items.filter((item) => `${item.title} ${item.excerpt} ${item.summary} ${item.category} ${item.source} ${item.meta} ${item.keyPoints.join(" ")}`.toLocaleLowerCase("ko-KR").includes(query));
+  list.innerHTML = items.map(renderDokkaebiNewsCard).join("");
+  const count = app.querySelector("#dokkaebi-count");
+  if (count) count.textContent = `${items.length}건`;
+  const empty = app.querySelector("#dokkaebi-empty-state");
+  if (empty) empty.hidden = items.length > 0;
 }
 
 function drawGameResults() {
@@ -1326,19 +1426,11 @@ function drawGameResults() {
       </section>` : "";
     return;
   }
-  const matches = matchingGames(query);
+  const matches = gameCatalog.filter((item) => `${item.name} ${item.displayTitle || ""} ${item.aliases || ""}`.toLocaleLowerCase("ko-KR").includes(query));
   results.innerHTML = matches.length ? matches.map((item) => {
     const followed = isGameFollowed(item.id);
-    const status = item.id === game.id
-      ? `최근 패치 · ${gameData.lastPatchDate || "아직 수집 전"}`
-      : item.upcoming
-        ? `출시 예정 · ${formatDisplayDate(item.releaseDate)}`
-        : "게임 정보 보기";
-    const label = item.displayTitle || item.name;
-    return `<div class="game-result">
-      <a class="game-result-open" href="${escapeHTML(item.route)}" data-action="record-game-search" aria-label="${escapeHTML(label)} 정보 열기"><span class="game-result-mark" aria-hidden="true"><img src="${escapeHTML(item.icon)}" alt="" /></span><span class="game-result-copy"><strong>${escapeHTML(label)}</strong><small>${escapeHTML(status)}</small></span></a>
-      <button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="toggle-follow" data-game-id="${escapeHTML(item.id)}" aria-label="${followed ? `${escapeHTML(label)} 팔로우 해제` : `${escapeHTML(label)} 팔로우`}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button>
-    </div>`;
+    const detail = item.id === game.id ? `최근 패치 · ${gameData.lastPatchDate || "아직 수집 전"}` : item.upcoming ? `출시 예정 · ${releaseDateLabel(item.releaseDate)}` : "소식 · 공지 · 업데이트 · 공략 검색";
+    return `<div class="game-result"><a class="game-result-open" href="${escapeHTML(item.route)}" data-action="record-game-search" aria-label="${escapeHTML(item.name)} 정보 열기"><span class="game-result-mark" aria-hidden="true"><img src="${escapeHTML(item.icon)}" alt="" /></span><span class="game-result-copy"><strong>${escapeHTML(item.displayTitle || item.name)}</strong><small>${escapeHTML(detail)}</small></span></a><button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="toggle-follow" data-game-id="${escapeHTML(item.id)}" aria-label="${followed ? `${escapeHTML(item.name)} 팔로우 해제` : `${escapeHTML(item.name)} 팔로우`}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button></div>`;
   }).join("") : `<div class="no-games"><strong>검색 결과가 없습니다.</strong><span>게임 이름을 다시 확인해 주세요.</span></div>`;
 }
 
@@ -1349,6 +1441,8 @@ function render() {
   if (kind === "detail") markNewsAsRead(detailId());
   let page;
   if (kind === "game-home") page = renderGameHome();
+  else if (kind === "dokkaebi-hub") page = renderDokkaebiPage();
+  else if (kind === "dokkaebi-detail") page = renderDokkaebiDetail(detailId());
   else if (kind === "game-hub") page = renderCatalogGamePage();
   else if (["news", "notices", "updates", "cm-stories"].includes(kind)) page = renderFeedPage(kind);
   else if (kind === "tasks") page = renderTasksPage();
@@ -1356,8 +1450,10 @@ function render() {
   else if (kind === "dashboard") page = renderDashboardPage();
   else if (kind === "detail") page = renderDetail(detailId());
   else page = renderHome();
-  app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}${renderChatbot()}`;
+  const chatbot = ["dokkaebi-hub", "dokkaebi-detail"].includes(kind) ? "" : renderChatbot();
+  app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}${chatbot}`;
   drawNewsList();
+  drawDokkaebiNewsList();
   drawGameResults();
   startReleaseCountdowns();
   maybeOpenTutorial();
@@ -1452,6 +1548,15 @@ app.addEventListener("click", (event) => {
       chip.setAttribute("aria-pressed", String(selected));
     });
     drawNewsList();
+  }
+  if (action === "dokkaebi-filter") {
+    state.dokkaebiFilter = button.dataset.filter || "전체";
+    app.querySelectorAll('[data-action="dokkaebi-filter"]').forEach((chip) => {
+      const selected = chip.dataset.filter === state.dokkaebiFilter;
+      chip.classList.toggle("selected", selected);
+      chip.setAttribute("aria-pressed", String(selected));
+    });
+    drawDokkaebiNewsList();
   }
   if (action === "record-game-search") rememberGameSearch(state.gameQuery);
   if (action === "clear-search-history") {
@@ -1583,6 +1688,10 @@ app.addEventListener("input", (event) => {
     state.gameQuery = event.target.value;
     drawGameResults();
   }
+  if (event.target.id === "dokkaebi-search") {
+    state.dokkaebiQuery = event.target.value;
+    drawDokkaebiNewsList();
+  }
 });
 
 app.addEventListener("change", (event) => {
@@ -1615,9 +1724,11 @@ app.addEventListener("keydown", (event) => {
     return;
   }
   if (event.target.id !== "game-search" || event.key !== "Enter") return;
+  const query = state.gameQuery.trim().toLocaleLowerCase("ko-KR");
+  if (!query) return;
   rememberGameSearch(state.gameQuery);
-  const firstMatch = matchingGames(state.gameQuery)[0];
-  if (firstMatch) window.location.hash = firstMatch.route;
+  const match = gameCatalog.find((item) => `${item.name} ${item.displayTitle || ""} ${item.aliases || ""}`.toLocaleLowerCase("ko-KR").includes(query));
+  if (match) window.location.hash = match.route;
 });
 
 app.addEventListener("contextmenu", (event) => {
@@ -1669,9 +1780,12 @@ app.addEventListener("submit", (event) => {
 window.addEventListener("hashchange", () => {
   state.filter = "전체";
   state.query = "";
+  state.dokkaebiFilter = dokkaebiRouteCategory();
+  state.dokkaebiQuery = "";
   state.gameSearchFocused = false;
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
+state.dokkaebiFilter = dokkaebiRouteCategory();
 render();
