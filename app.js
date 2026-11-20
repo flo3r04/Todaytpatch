@@ -300,7 +300,7 @@ function renderHeader() {
               const active = kind === route || (route === "game-home" && kind === "news") || (kind === "detail" && route === activeDetailRoute);
               return `<a class="nav-link ${active ? "active" : ""}" href="${href}" ${active ? 'aria-current="page"' : ""}>${label}</a>`;
             }).join("")}
-          </nav>` : `<span class="header-caption">${escapeHTML(selectedGame?.name || "게임별 소식을 한곳에서")}</span>`}
+          </nav>` : selectedGame ? `<span class="header-caption">${escapeHTML(selectedGame.name)}</span>` : ""}
         <div class="header-controls ${inGame ? "in-game" : ""}">
           <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
           ${renderNotificationControl()}
@@ -1306,6 +1306,13 @@ function drawNewsList() {
   if (empty) empty.hidden = items.length > 0;
 }
 
+function matchingGames(query) {
+  const normalizedQuery = String(query || "").trim().toLocaleLowerCase("ko-KR");
+  if (!normalizedQuery) return [];
+  return gameCatalog.filter((item) => `${item.name} ${item.displayTitle || ""} ${item.aliases || ""} ${item.id}`
+    .toLocaleLowerCase("ko-KR").includes(normalizedQuery));
+}
+
 function drawGameResults() {
   const results = app.querySelector("#game-results");
   if (!results) return;
@@ -1319,14 +1326,20 @@ function drawGameResults() {
       </section>` : "";
     return;
   }
-  const matches = game.aliases.toLocaleLowerCase("ko-KR").includes(query);
-  const latestPatchDate = gameData.lastPatchDate || "아직 수집 전";
-  const followed = isGameFollowed(game.id);
-  results.innerHTML = matches ? `
-    <div class="game-result">
-      <a class="game-result-open" href="#/aion2" data-action="record-game-search" aria-label="아이온2 정보 열기"><span class="game-result-mark" aria-hidden="true"><img src="./assets/aion2-logo.png" alt="" /></span><span class="game-result-copy"><strong>아이온2</strong><small>최근 패치 · ${escapeHTML(latestPatchDate)}</small></span></a>
-      <button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="toggle-follow" data-game-id="${game.id}" aria-label="${followed ? "아이온2 팔로우 해제" : "아이온2 팔로우"}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button>
-    </div>` : `<div class="no-games"><strong>검색 결과가 없습니다.</strong><span>게임 이름을 다시 확인해 주세요.</span></div>`;
+  const matches = matchingGames(query);
+  results.innerHTML = matches.length ? matches.map((item) => {
+    const followed = isGameFollowed(item.id);
+    const status = item.id === game.id
+      ? `최근 패치 · ${gameData.lastPatchDate || "아직 수집 전"}`
+      : item.upcoming
+        ? `출시 예정 · ${formatDisplayDate(item.releaseDate)}`
+        : "게임 정보 보기";
+    const label = item.displayTitle || item.name;
+    return `<div class="game-result">
+      <a class="game-result-open" href="${escapeHTML(item.route)}" data-action="record-game-search" aria-label="${escapeHTML(label)} 정보 열기"><span class="game-result-mark" aria-hidden="true"><img src="${escapeHTML(item.icon)}" alt="" /></span><span class="game-result-copy"><strong>${escapeHTML(label)}</strong><small>${escapeHTML(status)}</small></span></a>
+      <button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="toggle-follow" data-game-id="${escapeHTML(item.id)}" aria-label="${followed ? `${escapeHTML(label)} 팔로우 해제` : `${escapeHTML(label)} 팔로우`}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button>
+    </div>`;
+  }).join("") : `<div class="no-games"><strong>검색 결과가 없습니다.</strong><span>게임 이름을 다시 확인해 주세요.</span></div>`;
 }
 
 function render() {
@@ -1603,7 +1616,8 @@ app.addEventListener("keydown", (event) => {
   }
   if (event.target.id !== "game-search" || event.key !== "Enter") return;
   rememberGameSearch(state.gameQuery);
-  if (game.aliases.toLocaleLowerCase("ko-KR").includes(state.gameQuery.trim().toLocaleLowerCase("ko-KR"))) window.location.hash = "#/aion2";
+  const firstMatch = matchingGames(state.gameQuery)[0];
+  if (firstMatch) window.location.hash = firstMatch.route;
 });
 
 app.addEventListener("contextmenu", (event) => {
