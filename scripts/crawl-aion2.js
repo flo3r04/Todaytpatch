@@ -136,12 +136,19 @@ async function crawlBoard(board) {
   const payload = await fetchJson(listUrl, board.pageUrl);
   if (!Array.isArray(payload.contentList)) throw new Error(`${board.category} 게시판 응답 형식이 올바르지 않습니다.`);
 
-  return payload.contentList
-    .filter((article) => {
-      const postedAt = article.timestamps?.postedAt || article.timestamps?.publishedAt;
-      return postedAt && koreanDateKey(postedAt) >= sinceDate;
-    })
-    .map((article) => ({ article, board }));
+  const entries = payload.contentList.map((article) => ({
+    article,
+    postedAt: article.timestamps?.postedAt || article.timestamps?.publishedAt || "",
+  })).filter((entry) => entry.postedAt);
+  const recent = entries.filter((entry) => koreanDateKey(entry.postedAt) >= sinceDate)
+    .map(({ article }) => ({ article, board, comparisonOnly: false }));
+
+  if (board.key !== "update" || !recent.some((entry) => /(?:업데이트|패치)\s*노트/u.test(entry.article.title || ""))) return recent;
+  const previousUpdate = entries
+    .filter((entry) => koreanDateKey(entry.postedAt) < sinceDate && /(?:업데이트|패치)\s*노트/u.test(entry.article.title || ""))
+    .sort((left, right) => new Date(right.postedAt) - new Date(left.postedAt))[0];
+  if (previousUpdate) recent.push({ article: previousUpdate.article, board, comparisonOnly: true });
+  return recent;
 }
 
 async function mapWithConcurrency(items, limit, mapper) {
@@ -157,7 +164,7 @@ async function mapWithConcurrency(items, limit, mapper) {
   return results;
 }
 
-async function crawlArticle({ article, board }) {
+async function crawlArticle({ article, board, comparisonOnly = false }) {
   const detailUrl = `${apiBase}/board/${board.alias}/article/${encodeURIComponent(article.id)}`;
   const detail = await fetchJson(detailUrl, board.pageUrl);
   const detailArticle = detail.article || {};
@@ -177,6 +184,7 @@ async function crawlArticle({ article, board }) {
   return {
     id: `${board.key}-${article.id}`,
     sourceKey: board.key,
+    comparisonOnly,
     category: board.category,
     source: board.source,
     title: article.title || detailArticle.contentMeta?.title || "제목 없음",
@@ -235,7 +243,7 @@ function retryDelaySeconds(response, result, attempt) {
   return Math.min(Math.max(retryDelay || retryAfterHeader || 0, exponentialDelay), 1800);
 }
 
-async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
+async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0, qualityAttempt = 0) {
   const inputItems = items.map(({ id, category, title, bodyText }) => ({
     id,
     category,
@@ -310,6 +318,7 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
     "입력 id를 그대로 사용하고, 각 입력 게시물에 결과를 하나씩 반환하세요.",
     "반드시 지정된 JSON 스키마에 맞는 결과만 반환하세요.",
     formatAttempt > 0 ? "이전 응답의 형식 검증에 실패했습니다. JSON 형식과 필수 항목을 다시 확인하세요." : "",
+    qualityAttempt > 0 ? "이전 응답의 내용이 지나치게 짧았습니다. 본문을 처음부터 끝까지 다시 확인하고 중요한 파트, 수치, 조건과 이용자 행동을 더 충분히 설명하세요. 요약과 분석은 위에서 지정한 문장 수를 지키고, 각 파트마다 핵심 내용을 여러 문장으로 풀어 쓰세요." : "",
   ].join("\n");
   const headers = {
     "x-goog-api-key": apiKey,
@@ -340,7 +349,7 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
       const retryAfterSeconds = retryDelaySeconds(response, null, attempt);
       console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 재시도합니다(${attempt + 1}/${maxTransientRetries}).`);
       await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
-      return summarizeBatch(items, apiKey, attempt + 1, formatAttempt);
+      return summarizeBatch(items, apiKey, attempt + 1, formatAttempt, qualityAttempt);
     }
     throw new Error(`Google AI Studio 응답을 JSON으로 읽지 못했습니다. HTTP ${response.status} ${responseText.slice(0, 500)}`);
   }
@@ -350,7 +359,7 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
       const retryAfterSeconds = retryDelaySeconds(response, result, attempt);
       console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 재시도합니다(${attempt + 1}/${maxTransientRetries}).`);
       await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
-      return summarizeBatch(items, apiKey, attempt + 1, formatAttempt);
+      return summarizeBatch(items, apiKey, attempt + 1, formatAttempt, qualityAttempt);
     }
     const apiMessage = result.error?.message || responseText;
     throw new Error(`Google AI Studio 요약 요청 실패: HTTP ${response.status} ${String(apiMessage).slice(0, 500)}`);
@@ -401,9 +410,37 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0) {
   if (!validResult) {
     if (formatAttempt === 0) {
       console.warn(`Gemma 4 요약 형식 검증 실패(${formatError || "필수 필드 누락"}). 같은 모델로 한 번 다시 요청합니다.`);
-      return summarizeBatch(items, apiKey, attempt, formatAttempt + 1);
+      return summarizeBatch(items, apiKey, attempt, formatAttempt + 1, qualityAttempt);
     }
     throw new Error(`Google AI Studio 요약 응답 형식이 올바르지 않습니다${formatError ? `: ${formatError}` : "."}`);
+  }
+
+  const tooBrief = items.flatMap((item) => {
+    const analysis = byId.get(item.id);
+    const bodyLength = item.bodyText.length;
+    const minimumSummaryLength = bodyLength >= 6000 ? 260 : bodyLength >= 2000 ? 180 : bodyLength >= 500 ? 100 : 45;
+    const minimumAnalysisLength = bodyLength >= 6000 ? 180 : bodyLength >= 2000 ? 125 : bodyLength >= 500 ? 75 : 40;
+    const minimumSectionLength = bodyLength >= 5000 ? 70 : bodyLength >= 1500 ? 50 : 24;
+    const sentenceCount = (value) => Math.max(
+      String(value || "").split(/\r?\n+/).filter((line) => line.trim()).length,
+      (String(value || "").match(/[.!?](?:["'”’」』])?(?=\s|$)/gu) || []).length,
+    );
+    const sectionDetails = analysis.sections.reduce((count, section) => count + section.importantDetails.length, 0);
+    const insufficient = analysis.summary.trim().length < minimumSummaryLength
+      || analysis.analysis.trim().length < minimumAnalysisLength
+      || analysis.sections.some((section) => section.summary.trim().length < minimumSectionLength)
+      || sentenceCount(analysis.summary) < (bodyLength >= 2000 ? 3 : 2)
+      || sentenceCount(analysis.analysis) < (bodyLength >= 2000 ? 3 : 2)
+      || (bodyLength >= 1500 && sectionDetails === 0);
+    return insufficient ? [item.title] : [];
+  });
+
+  if (tooBrief.length) {
+    if (qualityAttempt === 0) {
+      console.warn(`Gemma 4 분석이 너무 짧아 본문을 다시 확인합니다: ${tooBrief.slice(0, 3).join(", ")}`);
+      return summarizeBatch(items, apiKey, attempt, formatAttempt, qualityAttempt + 1);
+    }
+    throw new Error(`AI 분석 분량이 기준보다 짧아 데이터를 갱신하지 않았습니다: ${tooBrief.slice(0, 3).join(", ")}`);
   }
 
   return items.map((item) => {
@@ -447,17 +484,44 @@ async function summarizeWithAI(items) {
   return summarized;
 }
 
+async function readExistingPatchBaseline() {
+  try {
+    const source = await fs.readFile(dataPath, "utf8");
+    const assignment = "window.todaypatchGameData = ";
+    if (!source.startsWith(assignment)) return null;
+    const data = JSON.parse(source.slice(assignment.length).replace(/;\s*$/, ""));
+    const baseline = data.aion2?.patchBaseline;
+    return baseline && typeof baseline === "object" ? baseline : null;
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(sinceDate)) throw new Error("AION2_CRAWL_SINCE는 YYYY-MM-DD 형식이어야 합니다.");
   if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY 환경 변수가 필요합니다. 기존 수집 데이터는 변경하지 않습니다.");
   const boardArticles = (await Promise.all(boards.map(crawlBoard))).flat();
-  const crawledItems = await mapWithConcurrency(boardArticles, 4, crawlArticle);
+  const regularArticles = boardArticles.filter((entry) => !entry.comparisonOnly);
+  const baselineEntry = boardArticles.find((entry) => entry.comparisonOnly);
+  const crawledItems = await mapWithConcurrency(regularArticles, 4, crawlArticle);
   crawledItems.sort((left, right) => new Date(right.postedAt) - new Date(left.postedAt));
   if (crawledItems.length === 0) throw new Error(`기준일 ${sinceDate} 이후 게시물이 없습니다. 기존 데이터는 유지합니다.`);
 
   const summarizedItems = await summarizeWithAI(crawledItems);
-  const newsItems = summarizedItems.map(({ bodyText, ...item }) => item);
+  let comparisonBaseline = await readExistingPatchBaseline();
+  if (baselineEntry) {
+    try {
+      const [baselineArticle] = await mapWithConcurrency([baselineEntry], 1, crawlArticle);
+      [comparisonBaseline] = await summarizeWithAI([baselineArticle]);
+    } catch (error) {
+      console.warn(`직전 업데이트 분석을 생략하고 기존 비교 기준을 유지합니다: ${error.message}`);
+    }
+  }
+  const newsItems = summarizedItems.map(({ bodyText, comparisonOnly: _comparisonOnly, ...item }) => item);
   const latestPatch = newsItems.find((item) => item.sourceKey === "update" && /(?:업데이트|패치)\s*노트/.test(item.title));
+  const patchBaseline = comparisonBaseline
+    ? Object.fromEntries(Object.entries(comparisonBaseline).filter(([key]) => key !== "bodyText" && key !== "comparisonOnly"))
+    : null;
 
   const output = {
     aion2: {
@@ -465,6 +529,7 @@ async function main() {
       crawledAt: new Date().toISOString(),
       sinceDate,
       sources: boards.map(({ key, category, pageUrl }) => ({ key, category, pageUrl })),
+      patchBaseline,
       newsItems,
     },
   };

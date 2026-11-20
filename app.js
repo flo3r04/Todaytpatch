@@ -1,5 +1,6 @@
 const gameData = window.todaypatchGameData?.aion2 || {};
 const newsItems = Array.isArray(gameData.newsItems) ? gameData.newsItems : [];
+const patchBaseline = gameData.patchBaseline && typeof gameData.patchBaseline === "object" ? gameData.patchBaseline : null;
 const game = { id: "aion2", name: "아이온2", aliases: "aion2 아이온2", icon: "./assets/aion2-logo.png", route: "#/aion2" };
 const categories = ["전체", "공지", "업데이트", "CM 아지트"];
 const gameCatalog = [
@@ -34,6 +35,16 @@ const displayNewsSource = (item) => isAionCmStory(item)
 const state = { filter: "전체", query: "", gameQuery: "", dokkaebiQuery: "", dokkaebiFilter: "전체", gameSearchFocused: false, notificationsOpen: false, tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [] };
 const app = document.querySelector("#app");
 let releaseCountdownTimer = null;
+const syncedPreferenceKeys = {
+  "todaypatch.followedGames": "followedGames",
+  "todaypatch.bookmarks": "bookmarks",
+  "todaypatch.readNews": "readNews",
+  "todaypatch.tasks": "tasks",
+  "todaypatch.userPosts": "userPosts",
+  "todaypatch.recentGameSearches": "recentSearches",
+  "todaypatch.theme": "theme",
+  "todaypatch.skipTutorial": "skipTutorial",
+};
 
 function readStorage(key, fallback) {
   try {
@@ -50,6 +61,40 @@ function writeStorage(key, value) {
   } catch {
     // The page remains usable when browser storage is disabled.
   }
+  if (syncedPreferenceKeys[key]) window.todaypatchCommunity?.schedulePreferenceSync();
+}
+
+function getSyncedPreferences() {
+  return {
+    followedGames: readStorage("todaypatch.followedGames", []),
+    bookmarks: readStorage("todaypatch.bookmarks", []),
+    readNews: readStorage("todaypatch.readNews", []),
+    tasks: readStorage("todaypatch.tasks", {}),
+    userPosts: readStorage("todaypatch.userPosts", []),
+    recentSearches: readStorage("todaypatch.recentGameSearches", []),
+    theme: readStorage("todaypatch.theme", null),
+    skipTutorial: readStorage("todaypatch.skipTutorial", null),
+  };
+}
+
+function applySyncedPreferences(preferences) {
+  const values = {
+    "todaypatch.followedGames": Array.isArray(preferences.followedGames) ? preferences.followedGames : [],
+    "todaypatch.bookmarks": Array.isArray(preferences.bookmarks) ? preferences.bookmarks : [],
+    "todaypatch.readNews": Array.isArray(preferences.readNews) ? preferences.readNews : [],
+    "todaypatch.tasks": preferences.tasks && typeof preferences.tasks === "object" && !Array.isArray(preferences.tasks) ? preferences.tasks : {},
+    "todaypatch.userPosts": Array.isArray(preferences.userPosts) ? preferences.userPosts : [],
+    "todaypatch.recentGameSearches": Array.isArray(preferences.recentSearches) ? preferences.recentSearches : [],
+    "todaypatch.theme": preferences.theme === "dark" ? "dark" : "light",
+    "todaypatch.skipTutorial": preferences.skipTutorial === true,
+  };
+  try {
+    for (const [key, value] of Object.entries(values)) localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Keep the current tab usable if browser storage is unavailable.
+  }
+  applyTheme(values["todaypatch.theme"]);
+  render();
 }
 
 function applyTheme(theme) {
@@ -902,9 +947,13 @@ function renderDashboardPage() {
   const bookmarks = newsItems.filter((item) => isAionNewsItem(item) && isSaved(item.id));
   const posts = userPosts();
   const calendarEvents = dashboardCalendarEvents();
+  const accountSyncEnabled = window.todaypatchCommunity?.hasRegisteredAccount?.() === true;
+  const accountSyncMessage = accountSyncEnabled
+    ? "팔로우, 북마크, 읽음 상태, 할 일과 개인 메모가 계정에 저장되어 기기 간 동기화됩니다."
+    : "계정에 로그인하면 팔로우, 북마크, 할 일과 개인 메모를 다른 기기에서도 이어서 볼 수 있습니다.";
   return `
     <main class="page-width game-page dashboard-page">
-      <div class="page-heading dashboard-heading"><div><span class="page-eyebrow">MY TODAYPATCH</span><h1>내 대시보드</h1><p>팔로우한 게임과 저장한 소식, 내가 작성한 글을 관리하세요.</p></div></div>
+      <div class="page-heading dashboard-heading"><div><span class="page-eyebrow">MY TODAYPATCH</span><h1>내 대시보드</h1><p>${accountSyncMessage}</p></div></div>
       <div class="dashboard-stats" aria-label="내 활동 요약">
         <div class="dashboard-stat"><span>팔로우 게임</span><strong>${followed.length}</strong></div>
         <div class="dashboard-stat"><span>저장한 북마크</span><strong>${bookmarks.length}</strong></div>
@@ -926,11 +975,11 @@ function renderDashboardPage() {
       </section>
       ${renderDashboardCalendar(calendarEvents)}
       <section class="dashboard-section dashboard-posts" aria-labelledby="dashboard-posts-title">
-        <div class="dashboard-section-heading"><div><span class="page-eyebrow">MY POSTS</span><h2 id="dashboard-posts-title">내가 작성한 글</h2><p>이 브라우저에 저장되어 나에게만 보이는 글입니다.</p></div><button class="primary-button" type="button" data-action="toggle-post-form" aria-expanded="false">글 작성하기</button></div>
+        <div class="dashboard-section-heading"><div><span class="page-eyebrow">MY POSTS</span><h2 id="dashboard-posts-title">내가 작성한 글</h2><p>${accountSyncEnabled ? "계정에 저장되어 나만 볼 수 있으며, 다른 기기에서도 이어서 확인할 수 있습니다." : "로그인 전에는 이 브라우저에 저장되며, 계정에 로그인하면 다른 기기에서도 이어서 볼 수 있습니다."}</p></div><button class="primary-button" type="button" data-action="toggle-post-form" aria-expanded="false">글 작성하기</button></div>
         <form id="user-post-form" class="post-composer" hidden>
           <label for="user-post-title">제목</label><input id="user-post-title" name="title" type="text" maxlength="100" placeholder="글 제목을 입력하세요" required />
           <label for="user-post-body">내용</label><textarea id="user-post-body" name="body" rows="5" maxlength="5000" placeholder="나중에 다시 볼 내용을 적어두세요" required></textarea>
-          <div class="post-composer-actions"><span>작성한 글은 이 기기의 브라우저에만 저장됩니다.</span><button class="primary-button" type="submit">저장</button></div>
+          <div class="post-composer-actions"><span>${accountSyncEnabled ? "저장한 메모는 계정과 동기화됩니다." : "로그인하면 계정으로 저장해 여러 기기에서 볼 수 있습니다."}</span><button class="primary-button" type="submit">저장</button></div>
         </form>
         ${posts.length ? `<div class="user-post-list">${posts.map(renderUserPost).join("")}</div>` : `<div class="dashboard-empty post-empty"><p>아직 작성한 글이 없습니다.</p><span>글 작성하기를 눌러 메모나 공략을 저장해 보세요.</span></div>`}
       </section>
@@ -1000,6 +1049,74 @@ function taskDueDate(item, rule, evidence) {
   return dates.length ? { value: dates.at(-1).value, label: /마감|종료|만료|까지/u.test(datedLine) ? "기한" : "일정" } : { value: "", label: "" };
 }
 
+function patchSections(item) {
+  return Array.isArray(item?.sections) ? item.sections.filter((section) => section && typeof section.heading === "string") : [];
+}
+
+function patchTextSimilarity(left, right) {
+  const tokens = (value) => new Set(String(value || "").toLocaleLowerCase("ko-KR").match(/[가-힣]{2,}|[a-z0-9]+/gu) || []);
+  const a = tokens(left);
+  const b = tokens(right);
+  if (!a.size || !b.size) return 0;
+  const overlap = [...a].filter((token) => b.has(token)).length;
+  return overlap / (a.size + b.size - overlap);
+}
+
+function buildPatchComparison(currentItem) {
+  if (currentItem?.sourceKey !== "update") return null;
+  const versions = newsItems.filter((item) => item.sourceKey === "update");
+  if (patchBaseline && !versions.some((item) => item.id === patchBaseline.id)) versions.push(patchBaseline);
+  versions.sort((left, right) => String(right.postedAt || right.date || "").localeCompare(String(left.postedAt || left.date || "")));
+  const currentIndex = versions.findIndex((item) => item.id === currentItem.id);
+  const previous = currentIndex >= 0 ? versions[currentIndex + 1] : null;
+  if (!previous) return { current: currentItem, previous: null, addedSections: [], changedSections: [], removedSections: [] };
+
+  const oldSections = patchSections(previous);
+  const oldByHeading = new Map(oldSections.map((section) => [normalizeChatText(section.heading), section]));
+  const matchedOldHeadings = new Set();
+  const addedSections = [];
+  const changedSections = [];
+  for (const section of patchSections(currentItem)) {
+    const key = normalizeChatText(section.heading);
+    const oldSection = oldByHeading.get(key);
+    if (!oldSection) {
+      addedSections.push(section);
+      continue;
+    }
+    matchedOldHeadings.add(key);
+    const oldDetails = Array.isArray(oldSection.importantDetails) ? oldSection.importantDetails : [];
+    const currentDetails = Array.isArray(section.importantDetails) ? section.importantDetails : [];
+    const matchedOld = new Set();
+    const newDetails = currentDetails.filter((detail) => {
+      const matchIndex = oldDetails.findIndex((oldDetail, index) => !matchedOld.has(index)
+        && (normalizeChatText(oldDetail) === normalizeChatText(detail) || patchTextSimilarity(oldDetail, detail) >= .58));
+      if (matchIndex < 0) return true;
+      matchedOld.add(matchIndex);
+      return false;
+    });
+    const previousDetails = oldDetails.filter((detail, index) => !matchedOld.has(index));
+    const summaryChanged = normalizeChatText(section.summary) !== normalizeChatText(oldSection.summary);
+    if (newDetails.length || previousDetails.length || summaryChanged) {
+      changedSections.push({ heading: section.heading, currentSummary: section.summary, previousSummary: oldSection.summary, newDetails, previousDetails });
+    }
+  }
+  const removedSections = oldSections.filter((section) => !matchedOldHeadings.has(normalizeChatText(section.heading)));
+  return { current: currentItem, previous, addedSections, changedSections, removedSections };
+}
+
+function renderPatchComparison(item) {
+  if (item.sourceKey !== "update") return "";
+  const comparison = buildPatchComparison(item);
+  const previous = comparison?.previous;
+  if (!previous) {
+    return `<section class="article-panel patch-comparison"><div class="panel-heading"><h2>이전 패치와 비교</h2><span class="summary-badge">패치 비교</span></div><p>비교할 이전 업데이트 분석이 아직 없습니다. 크롤러는 기준일 이후 업데이트와 직전 업데이트를 함께 수집합니다. 다음 크롤링 후 새 업데이트 글에서 파트별 비교를 확인할 수 있습니다.</p></section>`;
+  }
+  const renderSection = (section, label) => `<article class="patch-diff-item"><div><span>${label}</span><strong>${escapeHTML(section.heading)}</strong></div><p>${renderSentenceLines(section.summary || "")}</p>${section.importantDetails?.length ? `<ul>${section.importantDetails.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>` : ""}</article>`;
+  const renderChanged = (section) => `<article class="patch-diff-item"><div><span>공통 파트 · 변경 후보</span><strong>${escapeHTML(section.heading)}</strong></div>${section.currentSummary ? `<p><b>이번 분석</b><br />${renderSentenceLines(section.currentSummary)}</p>` : ""}${section.newDetails.length ? `<ul>${section.newDetails.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>` : ""}${section.previousSummary && normalizeChatText(section.currentSummary) !== normalizeChatText(section.previousSummary) ? `<details><summary>이전 분석 보기</summary><p>${renderSentenceLines(section.previousSummary)}</p></details>` : ""}${section.previousDetails.length ? `<details><summary>이전 중요 항목 ${section.previousDetails.length}개 보기</summary><ul>${section.previousDetails.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul></details>` : ""}</article>`;
+  const changes = comparison.addedSections.length || comparison.changedSections.length || comparison.removedSections.length;
+  return `<section class="article-panel patch-comparison"><div class="panel-heading"><h2>이전 패치와 비교</h2><span class="summary-badge">${escapeHTML(previous.date || "이전 업데이트")}</span></div><p class="patch-comparison-note"><a href="${escapeHTML(previous.url || "")}" target="_blank" rel="noopener noreferrer">이전 업데이트 원문 ↗</a>과 이번 분석의 파트 제목·중요 항목을 비교했습니다. 분석 문구 차이로 변경 후보가 잡힐 수 있으니, 실제 적용 내용은 두 원문에서 확인해 주세요.</p>${!changes ? `<div class="patch-diff-empty"><strong>분석된 항목에서 뚜렷한 차이를 찾지 못했습니다.</strong><span>세부 수치와 적용 범위는 각 업데이트 원문에서 확인해 주세요.</span></div>` : `<div class="patch-diff-groups">${comparison.addedSections.length ? `<section class="patch-diff-group"><h3>이번 업데이트의 새 파트</h3>${comparison.addedSections.map((section) => renderSection(section, "새 파트")).join("")}</section>` : ""}${comparison.changedSections.length ? `<section class="patch-diff-group"><h3>공통 파트의 변경 후보</h3>${comparison.changedSections.map(renderChanged).join("")}</section>` : ""}${comparison.removedSections.length ? `<section class="patch-diff-group"><h3>이전 분석에만 있는 파트</h3>${comparison.removedSections.map((section) => renderSection(section, "이전 파트")).join("")}</section>` : ""}</div>`}<a class="patch-diff-current-source" href="${escapeHTML(item.url || "")}" target="_blank" rel="noopener noreferrer">이번 업데이트 원문 ↗</a></section>`;
+}
+
 function buildPatchTaskRecommendations() {
   const items = [...newsItems].filter(isAionNewsItem).sort((left, right) => String(right.postedAt || "").localeCompare(String(left.postedAt || "")));
   const candidates = [];
@@ -1067,9 +1184,9 @@ function renderDetail(id) {
   const keyPoints = Array.isArray(item.keyPoints) ? item.keyPoints : [];
   const sections = Array.isArray(item.sections) ? item.sections : [];
   const detailedSections = sections.length
-    ? `<div class="analysis-sections"><h3>원문 파트별 핵심 내용</h3>${sections.map((section) => {
+    ? `<div class="analysis-sections"><h3>원문 파트별 핵심 내용</h3>${sections.map((section, index) => {
       const details = Array.isArray(section.importantDetails) ? section.importantDetails : [];
-      return `<section class="analysis-section"><h4>${escapeHTML(section.heading)}</h4><p>${renderSentenceLines(section.summary)}</p>${details.length ? `<ul>${details.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>` : ""}</section>`;
+      return `<section class="analysis-section" id="analysis-section-${index}"><h4>${escapeHTML(section.heading)}</h4><p>${renderSentenceLines(section.summary)}</p>${details.length ? `<ul>${details.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>` : ""}</section>`;
     }).join("")}</div>`
     : keyPoints.length ? `<ul class="key-point-list">${keyPoints.map((point) => `<li>${escapeHTML(point)}</li>`).join("")}</ul>` : "";
   const sourceRoute = { notice: "notices", update: "updates", "cm-story": "cm-stories" }[item.sourceKey] || "news";
@@ -1081,6 +1198,7 @@ function renderDetail(id) {
           <div class="detail-title-row"><div><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><h1>${escapeHTML(item.title)}</h1></div><button class="bookmark-button detail-bookmark ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg></button></div>
           <section class="article-panel summary-panel"><div class="panel-heading"><h2>전체 내용 요약</h2><span class="summary-badge">전체 흐름</span></div><p class="summary-copy">${renderSentenceLines(summary)}</p></section>
           <section class="article-panel analysis-panel"><div class="panel-heading"><h2>AI 분석</h2><span class="example-label">이용자 관점</span></div><p class="analysis-copy">${renderSentenceLines(analysis)}</p>${detailedSections}<a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 링크 열기 <span aria-hidden="true">↗</span></a></section>
+          ${renderPatchComparison(item)}
           <section class="article-panel community-notice-actions"><div><span class="page-eyebrow">DISCUSS THIS NOTICE</span><h2>이 공지에 대해 이야기해 보세요</h2><p>공식 원문과 필요한 분석 항목을 연결해 질문하거나 토론할 수 있습니다.</p></div><div><a class="secondary-button" href="#/community/new?gameId=aion2&type=question&newsId=${encodeURIComponent(item.id)}">이 공지로 질문하기</a><a class="primary-button" href="#/community/new?gameId=aion2&type=discussion&newsId=${encodeURIComponent(item.id)}">토론 시작하기</a></div></section>
           <section class="article-panel"><div class="panel-heading"><h2>수집 정보</h2><span class="example-label">공식 게시판</span></div><dl class="info-list"><div><dt>게시판</dt><dd>${escapeHTML(displayNewsSource(item))}</dd></div><div><dt>게시일</dt><dd>${escapeHTML(item.date)}</dd></div><div><dt>수정일</dt><dd>${item.updatedAt ? escapeHTML(formatDisplayDate(item.updatedAt)) : "수정 기록 없음"}</dd></div></dl></section>
           <section class="article-panel action-panel"><div><strong>정보가 정확하지 않나요?</strong><p>날짜, 수치, 직업 정보나 출처 문제를 알려주세요.</p></div><button class="secondary-button" data-action="report">정보 신고</button></section>
@@ -1119,13 +1237,14 @@ function chatKnowledgeLines(item) {
     { text: item.analysis, kind: "analysis", weight: .85 },
     { text: item.excerpt, kind: "summary", weight: .65 },
     ...(Array.isArray(item.keyPoints) ? item.keyPoints.map((text) => ({ text, key: normalizeChatText(text), kind: "detail", weight: 1.8 })) : []),
-    ...(Array.isArray(item.sections) ? item.sections.flatMap((section) => [
-      { text: `${section.heading || ""} ${section.summary || ""}`, kind: "section", weight: 1.4 },
+    ...(Array.isArray(item.sections) ? item.sections.flatMap((section, sectionIndex) => [
+      { text: `${section.heading || ""} ${section.summary || ""}`, kind: "section", weight: 1.4, sectionIndex },
       ...(Array.isArray(section.importantDetails) ? section.importantDetails.map((text) => ({
         text: `${section.heading || ""} ${text}`,
         key: normalizeChatText(text),
         kind: "detail",
         weight: 2.2,
+        sectionIndex,
       })) : []),
     ]) : []),
   ];
@@ -1324,10 +1443,10 @@ function answerNoticeQuestion(question, previousQuestion = "") {
     const key = normalizeChatText(line.text);
     if (key.length < 3 || seenFacts.has(key)) continue;
     seenFacts.add(key);
-    facts.push(line.text);
+    facts.push({ text: line.text, id: best.item.id, title: best.item.title, url: best.item.url, sectionIndex: line.sectionIndex });
     if (facts.length === 5) break;
   }
-  const sources = ranked.filter((result) => result.score >= best.score * .42).slice(0, 3).map(({ item }) => ({ id: item.id, title: item.title }));
+  const sources = ranked.filter((result) => result.score >= best.score * .42).slice(0, 3).map(({ item }) => ({ id: item.id, title: item.title, url: item.url }));
   const text = query.intents.deadline || query.intents.date
     ? "질문의 핵심어와 날짜·기간 관련 근거를 우선 확인했어요. 필요한 조건과 원문도 함께 표시합니다."
     : query.intents.condition || query.intents.method || query.intents.reward
@@ -1338,8 +1457,17 @@ function answerNoticeQuestion(question, previousQuestion = "") {
 
 function renderChatMessage(message) {
   if (message.role === "user") return `<article class="chat-message user"><div class="chat-bubble"><p>${escapeHTML(message.text)}</p></div></article>`;
-  const facts = Array.isArray(message.facts) && message.facts.length ? `<ul>${message.facts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join("")}</ul>` : "";
-  const sources = Array.isArray(message.sources) && message.sources.length ? `<div class="chat-sources">${message.sources.map((source) => `<a href="#/aion2/news/${encodeURIComponent(source.id)}">공지 보기 · ${escapeHTML(source.title)} <span aria-hidden="true">↗</span></a>`).join("")}</div>` : "";
+  const facts = Array.isArray(message.facts) && message.facts.length ? `<ul>${message.facts.map((fact) => {
+    const citation = typeof fact === "string" ? { text: fact } : fact;
+    const detailRoute = citation.id
+      ? `#/aion2/news/${encodeURIComponent(citation.id)}${Number.isInteger(citation.sectionIndex) ? `?section=${citation.sectionIndex}` : ""}`
+      : "";
+    const links = detailRoute || citation.url
+      ? `<span class="chat-fact-citations">${detailRoute ? `<a href="${detailRoute}">분석 근거 보기 ↗</a>` : ""}${citation.url ? `<a href="${escapeHTML(citation.url)}" target="_blank" rel="noopener noreferrer">공식 원문 ↗</a>` : ""}</span>`
+      : "";
+    return `<li>${escapeHTML(citation.text)}${links}</li>`;
+  }).join("")}</ul>` : "";
+  const sources = Array.isArray(message.sources) && message.sources.length ? `<div class="chat-sources">${message.sources.map((source) => `<a href="#/aion2/news/${encodeURIComponent(source.id)}">분석 게시물 · ${escapeHTML(source.title)} <span aria-hidden="true">↗</span></a>${source.url ? `<a href="${escapeHTML(source.url)}" target="_blank" rel="noopener noreferrer">원문 ↗</a>` : ""}`).join("")}</div>` : "";
   return `<article class="chat-message assistant"><span class="chat-avatar" aria-hidden="true">T</span><div class="chat-bubble"><p>${escapeHTML(message.text)}</p>${facts}${sources}</div></article>`;
 }
 
@@ -1360,7 +1488,7 @@ function renderChatbot() {
 const tutorialSteps = [
   { title: "게임을 검색하고 팔로우하세요", body: "홈 검색창에서 아이온2, 도깨비의 세계, 템빨을 찾아보세요. 검색 결과에서 게임 이름을 누르면 해당 게임 화면으로 이동합니다.", tip: "팔로우 버튼을 누르면 홈에 아이콘 바로가기가 생겨요. 아이콘을 눌러 입장하고, 우클릭하거나 길게 눌러 팔로우를 해제할 수 있습니다." },
   { title: "새 소식과 공략을 확인하세요", body: "팔로우한 게임의 새 글은 홈의 게시글 영역에서 모아 볼 수 있고, 게임 화면에서는 공지·업데이트·공략을 찾아볼 수 있습니다. 홈 오른쪽에는 분석 내용에서 추린 공략도 표시됩니다.", tip: "아이온2 게시글은 AI 요약·항목별 분석·공식 원문 링크를 제공합니다. 다른 게임은 데이터 연동 범위에 따라 예시 또는 준비 중인 내용이 보일 수 있어요." },
-  { title: "북마크와 할 일을 관리하세요", body: "게시글을 저장하거나 읽음 표시로 확인 상태를 관리하세요. 대시보드에서 팔로우한 게임, 북마크, 작성한 글, 패치 후 할 일을 한곳에서 볼 수 있습니다.", tip: "팔로우한 게임에 새 글이 올라오면 오른쪽 위 알림에서 확인할 수 있습니다. 북마크와 읽음 상태는 현재 브라우저에 저장돼요." },
+  { title: "북마크와 할 일을 관리하세요", body: "게시글을 저장하거나 읽음 표시로 확인 상태를 관리하세요. 대시보드에서 팔로우한 게임, 북마크, 작성한 글, 패치 후 할 일을 한곳에서 볼 수 있습니다.", tip: "로그인하면 팔로우, 북마크, 읽음 상태와 개인 메모가 계정에 저장되어 여러 기기에서 이어집니다. 브라우저 알림 권한은 기기별로 설정해야 합니다." },
   { title: "일정과 출시일을 놓치지 마세요", body: "대시보드 캘린더에서 공지에 나온 이벤트 기간, 서버 이전, 보상 수령 마감일을 확인할 수 있습니다. 홈의 출시 카운트다운은 출시 예정 게임의 남은 시간을 보여줍니다.", tip: "공지에서 날짜를 찾지 못한 일정은 표시되지 않을 수 있으니, 중요한 날짜는 공식 원문도 확인해 주세요." },
   { title: "챗봇에 공지 내용을 질문하세요", body: "화면 오른쪽 아래의 질문 버튼을 누르고 궁금한 키워드나 조건을 입력하세요. 챗봇이 수집된 공지와 분석 내용에서 관련 정보를 찾아 답변합니다.", tip: "답변에 연결된 출처를 열어 공식 원문을 함께 확인하면 정확한 조건과 예외를 놓치지 않을 수 있어요." },
 ];
@@ -1498,6 +1626,10 @@ function render() {
   } else {
     maybeOpenTutorial();
   }
+  const sectionIndex = new URLSearchParams(currentRoute().split("?")[1] || "").get("section");
+  if (kind === "detail" && sectionIndex && /^\d+$/.test(sectionIndex)) {
+    window.requestAnimationFrame(() => app.querySelector(`#analysis-section-${Number(sectionIndex)}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }
 }
 
 function openDialog(kind) {
@@ -1505,7 +1637,7 @@ function openDialog(kind) {
   const content = app.querySelector("#dialog-content");
   if (!dialog || !content) return;
   if (kind === "login") {
-    content.innerHTML = `<button class="dialog-close" data-action="close-dialog" aria-label="닫기">×</button><span class="page-eyebrow">TODAYPATCH ACCOUNT</span><h2 id="dialog-title">계정 로그인</h2><p>계정에 로그인하면 커뮤니티 게시글·댓글·알림을 여러 기기에서 이용할 수 있습니다. 팔로우, 북마크, 읽음 상태와 할 일은 현재 브라우저에 저장됩니다.</p><button class="primary-button dialog-primary" type="button" data-action="community-login">로그인 또는 계정 만들기</button>`;
+    content.innerHTML = `<button class="dialog-close" data-action="close-dialog" aria-label="닫기">×</button><span class="page-eyebrow">TODAYPATCH ACCOUNT</span><h2 id="dialog-title">계정 로그인</h2><p>로그인하면 커뮤니티 기록과 팔로우, 북마크, 읽음 상태, 할 일 및 개인 메모를 계정에 저장해 여러 기기에서 이어서 사용할 수 있습니다.</p><button class="primary-button dialog-primary" type="button" data-action="community-login">로그인 또는 계정 만들기</button>`;
   } else {
     content.innerHTML = `<button class="dialog-close" data-action="close-dialog" aria-label="닫기">×</button><span class="page-eyebrow">REPORT INFORMATION</span><h2 id="dialog-title">정보 신고</h2><p>잘못된 날짜·수치·직업 정보나 오래된 공략을 알려주세요.</p><form id="report-form"><label for="report-reason">신고 내용</label><select id="report-reason" name="reason"><option>날짜 또는 기간이 달라요</option><option>직업·스킬 정보가 달라요</option><option>패치 버전이 오래됐어요</option><option>출처 링크가 열리지 않아요</option><option>기타</option></select><label for="report-detail">자세한 내용</label><textarea id="report-detail" name="detail" rows="3" placeholder="확인한 내용을 적어주세요."></textarea><button class="primary-button dialog-primary" type="submit">신고 내용 확인</button></form><span class="dialog-note">프로토타입에서는 신고가 저장되지 않습니다.</span>`;
   }
@@ -1850,6 +1982,8 @@ window.todaypatchCommunity?.init({
   getRouteParts: () => routeParts(),
   getKind: () => routeKind(),
   isCommunityRoute: () => routeKind().startsWith("community"),
+  getPreferences: getSyncedPreferences,
+  applyPreferences: applySyncedPreferences,
   render,
   showToast,
 });

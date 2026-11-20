@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID, createHash, randomBytes, scrypt, timingSafeEqual } = require("node:crypto");
 const { promisify } = require("node:util");
+const { sanitizePreferences } = require("./user-preferences");
 
 const root = __dirname;
 const port = Number(process.env.PORT) || 4173;
@@ -21,7 +22,7 @@ const mimeTypes = {
   ".svg": "image/svg+xml",
 };
 
-let communityStore = { accounts: [], sessions: {}, posts: [], comments: [], reports: [], notifications: [], authFailures: {} };
+let communityStore = { accounts: [], sessions: {}, posts: [], comments: [], reports: [], notifications: [], preferences: {}, authFailures: {} };
 let persistQueue = Promise.resolve();
 let dummyPasswordHashPromise;
 
@@ -34,6 +35,7 @@ function normalizeStore(value) {
     comments: Array.isArray(value.comments) ? value.comments : [],
     reports: Array.isArray(value.reports) ? value.reports : [],
     notifications: Array.isArray(value.notifications) ? value.notifications : [],
+    preferences: value.preferences && typeof value.preferences === "object" && !Array.isArray(value.preferences) ? value.preferences : {},
     authFailures: value.authFailures && typeof value.authFailures === "object" && !Array.isArray(value.authFailures) ? value.authFailures : {},
   };
 }
@@ -306,6 +308,25 @@ async function handleApi(request, response, requestUrl) {
 
   if (pathname === "/api/community/session" && method === "GET") {
     sendJson(response, 200, { user: publicAccount(account) });
+    return;
+  }
+  if (pathname === "/api/community/preferences" && method === "GET") {
+    if (!account) {
+      sendError(response, 401, "로그인이 필요합니다.");
+      return;
+    }
+    sendJson(response, 200, { preferences: sanitizePreferences(communityStore.preferences[account.id] || {}) });
+    return;
+  }
+  if (pathname === "/api/community/preferences" && method === "PUT") {
+    if (!account) {
+      sendError(response, 401, "로그인이 필요합니다.");
+      return;
+    }
+    const input = await readJson(request);
+    communityStore.preferences[account.id] = sanitizePreferences(input.preferences);
+    await persistCommunityStore();
+    sendJson(response, 200, { ok: true });
     return;
   }
   if (pathname === "/api/community/register" && method === "POST") {

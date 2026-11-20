@@ -1,6 +1,7 @@
 const { randomUUID, createHash, randomBytes, scrypt, timingSafeEqual } = require("node:crypto");
 const { promisify } = require("node:util");
 const { Pool } = require("pg");
+const { sanitizePreferences } = require("../user-preferences");
 
 const sessionCookie = "todaypatch_session";
 const categories = new Set(["free", "question", "guide", "discussion"]);
@@ -37,6 +38,11 @@ async function ensureSchema() {
         account_id uuid NOT NULL REFERENCES community_accounts(id) ON DELETE CASCADE,
         created_at timestamptz NOT NULL DEFAULT now(),
         expires_at timestamptz NOT NULL
+      )`);
+      await pool.query(`CREATE TABLE IF NOT EXISTS community_user_preferences (
+        account_id uuid PRIMARY KEY REFERENCES community_accounts(id) ON DELETE CASCADE,
+        preferences jsonb NOT NULL DEFAULT '{}'::jsonb,
+        updated_at timestamptz NOT NULL DEFAULT now()
       )`);
       await pool.query(`CREATE TABLE IF NOT EXISTS community_posts (
         id uuid PRIMARY KEY,
@@ -365,6 +371,25 @@ async function dispatch(req, res, route, account) {
 
   if (path === "/session" && method === "GET") {
     json(res, 200, { user: publicAccount(account) });
+    return;
+  }
+
+  if (path === "/preferences" && method === "GET") {
+    if (!requireAccount(account, res)) return;
+    const result = await pool.query("SELECT preferences FROM community_user_preferences WHERE account_id=$1", [account.id]);
+    json(res, 200, { preferences: sanitizePreferences(result.rows[0]?.preferences || {}) });
+    return;
+  }
+
+  if (path === "/preferences" && method === "PUT") {
+    if (!requireAccount(account, res)) return;
+    const input = await readJson(req);
+    const preferences = sanitizePreferences(input.preferences);
+    await pool.query(`INSERT INTO community_user_preferences (account_id, preferences, updated_at)
+      VALUES ($1, $2::jsonb, now())
+      ON CONFLICT (account_id) DO UPDATE SET preferences=EXCLUDED.preferences, updated_at=now()`,
+    [account.id, JSON.stringify(preferences)]);
+    json(res, 200, { ok: true });
     return;
   }
 

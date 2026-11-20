@@ -14,6 +14,11 @@
   let context = null;
   let sequence = 0;
   let searchTimer = 0;
+  let preferenceSyncTimer = 0;
+  let preferenceRevision = 0;
+  let preferenceSyncErrorShown = false;
+  const preferenceAccountKey = "todaypatch.preferencesAccount";
+  const preferenceDirtyKey = "todaypatch.preferencesDirty";
 
   const escapeHTML = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -63,6 +68,86 @@
       : error?.message || "커뮤니티 요청을 처리하지 못했습니다.";
     context?.showToast?.(message);
     state.error = message;
+  }
+
+  function saveLocalValue(key, value) {
+    try { localStorage.setItem(key, value); } catch { /* Browser storage remains optional. */ }
+  }
+
+  function getPreferenceSnapshot() {
+    return context?.getPreferences?.() || {};
+  }
+
+  function mergePreferenceSnapshots(remote, local) {
+    const unique = (left, right, limit) => [...new Set([...(Array.isArray(left) ? left : []), ...(Array.isArray(right) ? right : [])])].slice(0, limit);
+    const remotePosts = Array.isArray(remote.userPosts) ? remote.userPosts : [];
+    const localPosts = Array.isArray(local.userPosts) ? local.userPosts : [];
+    const posts = new Map(remotePosts.map((post) => [post.id, post]));
+    for (const post of localPosts) posts.set(post.id, post);
+    return {
+      followedGames: unique(local.followedGames, remote.followedGames, 50),
+      bookmarks: unique(local.bookmarks, remote.bookmarks, 2000),
+      readNews: unique(local.readNews, remote.readNews, 5000),
+      tasks: { ...(remote.tasks || {}), ...(local.tasks || {}) },
+      userPosts: [...posts.values()].sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || ""))).slice(0, 100),
+      recentSearches: unique(local.recentSearches, remote.recentSearches, 5),
+      theme: local.theme === "dark" || local.theme === "light" ? local.theme : remote.theme,
+      skipTutorial: typeof local.skipTutorial === "boolean" ? local.skipTutorial : remote.skipTutorial === true,
+    };
+  }
+
+  function reportPreferenceSyncError() {
+    if (preferenceSyncErrorShown) return;
+    preferenceSyncErrorShown = true;
+    context?.showToast?.("계정 동기화에 실패했어요. 변경 사항은 이 기기에 저장되어 있습니다.");
+  }
+
+  async function flushPreferences() {
+    if (!state.user || !context?.getPreferences) return;
+    const revision = preferenceRevision;
+    try {
+      await api("/api/community/preferences", { method: "PUT", body: { preferences: getPreferenceSnapshot() } });
+      saveLocalValue(preferenceAccountKey, state.user.id);
+      if (revision === preferenceRevision) saveLocalValue(preferenceDirtyKey, "false");
+      preferenceSyncErrorShown = false;
+      if (revision !== preferenceRevision) schedulePreferenceSync();
+    } catch {
+      reportPreferenceSyncError();
+    }
+  }
+
+  function schedulePreferenceSync() {
+    preferenceRevision += 1;
+    saveLocalValue(preferenceDirtyKey, "true");
+    if (!state.user) return;
+    window.clearTimeout(preferenceSyncTimer);
+    preferenceSyncTimer = window.setTimeout(() => void flushPreferences(), 500);
+  }
+
+  async function syncPreferencesForCurrentUser() {
+    if (!state.user || !context?.getPreferences || !context?.applyPreferences) return;
+    try {
+      const { preferences: remote = {} } = await api("/api/community/preferences");
+      let marker = "";
+      let dirty = false;
+      try {
+        marker = localStorage.getItem(preferenceAccountKey) || "";
+        dirty = localStorage.getItem(preferenceDirtyKey) === "true";
+      } catch { /* The current account can still load its saved settings. */ }
+      const local = getPreferenceSnapshot();
+      const preferences = marker === state.user.id
+        ? dirty ? local : remote
+        : marker ? remote : mergePreferenceSnapshots(remote, local);
+      context.applyPreferences(preferences);
+      const syncedPreferences = getPreferenceSnapshot();
+      const revision = preferenceRevision;
+      await api("/api/community/preferences", { method: "PUT", body: { preferences: syncedPreferences } });
+      saveLocalValue(preferenceAccountKey, state.user.id);
+      if (revision === preferenceRevision) saveLocalValue(preferenceDirtyKey, "false");
+      preferenceSyncErrorShown = false;
+    } catch {
+      reportPreferenceSyncError();
+    }
   }
 
   function routeParams() {
@@ -358,6 +443,7 @@
 
   async function bootstrap() {
     await Promise.all([loadSession(), loadFeed()]);
+    await syncPreferencesForCurrentUser();
     await loadNotifications();
     if (context?.isCommunityRoute?.()) await loadRoute();
     else context?.render();
@@ -375,6 +461,8 @@
       } else if (action === "community-auth-mode") {
         openAuthDialog(button.dataset.mode);
       } else if (action === "community-logout") {
+        window.clearTimeout(preferenceSyncTimer);
+        await flushPreferences();
         await api("/api/community/logout", { method: "POST", body: {} });
         state.user = null;
         state.notifications = [];
@@ -494,6 +582,7 @@
         state.user = result.user;
         state.error = "";
         document.querySelector("#app-dialog")?.close();
+        await syncPreferencesForCurrentUser();
         await loadNotifications();
         context.render();
         context.showToast?.(mode === "register" ? "계정을 만들고 로그인했습니다." : "로그인했습니다.");
@@ -552,6 +641,8 @@
 
   window.todaypatchCommunity = {
     init, bootstrap, loadRoute, renderPage, renderAccountControl, renderPreview, renderNotificationItems, unreadNotificationCount, markAllNotificationsRead, refreshNotifications: loadNotifications,
+    hasRegisteredAccount: () => Boolean(state.user?.email),
+    getPreferences: getPreferenceSnapshot, applyPreferences: (preferences) => context?.applyPreferences?.(preferences), schedulePreferenceSync,
     isAction, handleAction, handleInput, handleChange, ownsForm, handleSubmit,
   };
 })();
