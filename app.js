@@ -1467,6 +1467,7 @@ function drawGameResults() {
 }
 
 function render() {
+  const tutorialWasOpen = Boolean(app.querySelector("#tutorial-dialog")?.open);
   syncFollowedNewsNotifications();
   syncCalendarNotifications();
   const kind = routeKind();
@@ -1489,7 +1490,14 @@ function render() {
   drawDokkaebiNewsList();
   drawGameResults();
   startReleaseCountdowns();
-  maybeOpenTutorial();
+  if (tutorialWasOpen) {
+    renderTutorialStep();
+    const tutorialDialog = app.querySelector("#tutorial-dialog");
+    tutorialDialog?.showModal();
+    tutorialDialog?.querySelector("#tutorial-title")?.focus();
+  } else {
+    maybeOpenTutorial();
+  }
 }
 
 function openDialog(kind) {
