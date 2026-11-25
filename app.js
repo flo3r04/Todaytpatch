@@ -1474,6 +1474,12 @@ function answerNoticeQuestion(question, previousQuestion = "") {
 
 function renderChatMessage(message) {
   if (message.role === "user") return `<article class="chat-message user"><div class="chat-bubble"><p>${escapeHTML(message.text)}</p></div></article>`;
+  if (message.loading) {
+    return `<article class="chat-message assistant"><span class="chat-avatar" aria-hidden="true">T</span><div class="chat-bubble"><p class="chat-loading">${escapeHTML(message.text)}</p></div></article>`;
+  }
+  const badge = message.aiGenerated
+    ? `<small class="chat-ai-badge">✨ Gemini AI 실시간 요약</small>`
+    : "";
   const facts = Array.isArray(message.facts) && message.facts.length ? `<ul>${message.facts.map((fact) => {
     const citation = typeof fact === "string" ? { text: fact } : fact;
     const detailRoute = citation.id
@@ -1485,7 +1491,7 @@ function renderChatMessage(message) {
     return `<li>${escapeHTML(citation.text)}${links}</li>`;
   }).join("")}</ul>` : "";
   const sources = Array.isArray(message.sources) && message.sources.length ? `<div class="chat-sources">${message.sources.map((source) => `<a href="#/aion2/news/${encodeURIComponent(source.id)}">분석 게시물 · ${escapeHTML(source.title)} <span aria-hidden="true">↗</span></a>${source.url ? `<a href="${escapeHTML(source.url)}" target="_blank" rel="noopener noreferrer">원문 ↗</a>` : ""}`).join("")}</div>` : "";
-  return `<article class="chat-message assistant"><span class="chat-avatar" aria-hidden="true">T</span><div class="chat-bubble"><p>${escapeHTML(message.text)}</p>${facts}${sources}</div></article>`;
+  return `<article class="chat-message assistant"><span class="chat-avatar" aria-hidden="true">T</span><div class="chat-bubble"><p>${escapeHTML(message.text)}</p>${badge}${facts}${sources}</div></article>`;
 }
 
 function renderChatbot() {
@@ -1974,18 +1980,80 @@ app.addEventListener("submit", (event) => {
   }
   if (event.target.id === "chatbot-form") {
     event.preventDefault();
+    const inputEl = event.target.querySelector("input[name='question']");
     const question = String(new FormData(event.target).get("question") || "").trim();
     if (!question) return;
+    if (inputEl) inputEl.value = "";
     const previousQuestion = [...state.chatMessages].reverse().find((message) => message.role === "user")?.text || "";
-    state.chatMessages.push({ role: "user", text: question }, answerNoticeQuestion(question, previousQuestion));
+
+    const localAnswer = answerNoticeQuestion(question, previousQuestion);
+
+    const scrollChat = () => {
+      requestAnimationFrame(() => {
+        const messages = app.querySelector("#chatbot-messages");
+        if (messages) messages.scrollTop = messages.scrollHeight;
+      });
+    };
+
+    if (!localAnswer.facts?.length && !localAnswer.sources?.length) {
+      state.chatMessages.push({ role: "user", text: question }, localAnswer);
+      state.chatMessages = state.chatMessages.slice(-40);
+      state.chatOpen = true;
+      render();
+      scrollChat();
+      app.querySelector("#chatbot-question")?.focus();
+      return;
+    }
+
+    state.chatMessages.push(
+      { role: "user", text: question },
+      { role: "assistant", loading: true, text: "AI가 공지 분석 내용을 확인하여 답변을 생성하고 있어요..." }
+    );
     state.chatMessages = state.chatMessages.slice(-40);
     state.chatOpen = true;
     render();
-    requestAnimationFrame(() => {
-      const messages = app.querySelector("#chatbot-messages");
-      if (messages) messages.scrollTop = messages.scrollHeight;
-      app.querySelector("#chatbot-question")?.focus();
-    });
+    scrollChat();
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question,
+            context: {
+              facts: localAnswer.facts,
+              sources: localAnswer.sources,
+            },
+          }),
+        });
+        const data = await response.json();
+        const lastMsg = state.chatMessages[state.chatMessages.length - 1];
+        if (lastMsg && lastMsg.loading) {
+          if (response.ok && data.answer) {
+            state.chatMessages[state.chatMessages.length - 1] = {
+              role: "assistant",
+              text: data.answer,
+              facts: localAnswer.facts,
+              sources: localAnswer.sources,
+              aiGenerated: true,
+              model: data.model,
+            };
+          } else {
+            state.chatMessages[state.chatMessages.length - 1] = localAnswer;
+          }
+          render();
+          scrollChat();
+        }
+      } catch {
+        const lastMsg = state.chatMessages[state.chatMessages.length - 1];
+        if (lastMsg && lastMsg.loading) {
+          state.chatMessages[state.chatMessages.length - 1] = localAnswer;
+          render();
+          scrollChat();
+        }
+      }
+    })();
     return;
   }
   if (event.target.id === "user-post-form") {

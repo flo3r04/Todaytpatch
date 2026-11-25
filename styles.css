@@ -606,6 +606,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .chat-bubble { max-width: calc(100% - 32px); padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .chat-message.user .chat-bubble { max-width: 85%; border-color: var(--brand); background: var(--brand); color: #fff; }
 .chat-bubble p { margin: 0; font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; }
+.chat-loading { color: var(--muted); font-style: italic; }
+.chat-ai-badge { margin-top: 6px; display: inline-block; padding: 2px 6px; background: rgba(34, 197, 94, 0.12); color: #16a34a; border-radius: 4px; font-size: 9px; font-weight: 600; }
+[data-theme="dark"] .chat-ai-badge { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
 .chat-bubble small { margin-top: 6px; display: block; color: var(--muted); font-size: 10px; }
 .chat-bubble ul { margin: 7px 0 0; padding-left: 17px; display: grid; gap: 5px; }
 .chat-bubble li { color: var(--muted); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }

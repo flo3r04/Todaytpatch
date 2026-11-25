@@ -306,6 +306,12 @@ async function handleApi(request, response, requestUrl) {
   const pathname = requestUrl.pathname;
   const account = currentAccount(request);
 
+  if (pathname === "/api/chat" && method === "POST") {
+    const chatHandler = require("./api/chat");
+    await chatHandler(request, response);
+    return;
+  }
+
   if (pathname === "/api/community/session" && method === "GET") {
     sendJson(response, 200, { user: publicAccount(account) });
     return;
