@@ -338,6 +338,53 @@
     return `<div class="community-preview-list">${posts.map((post) => `<a class="community-preview-item" href="${escapeHTML(linkToPost(post))}"><span class="community-type-badge type-${escapeHTML(post.type)}">${escapeHTML(typeNames[post.type] || "게시글")}</span><span class="community-preview-title">${escapeHTML(post.title)}</span><small>${escapeHTML(gameName(post.gameId))} · ${escapeHTML(post.author?.displayName || "게스트")}</small></a>`).join("")}</div>`;
   }
 
+  function renderHomePreview({ gameIds = [], tab = "popular", limit = 6, writeGameId = "aion2" } = {}) {
+    const allowed = new Set((gameIds || []).filter(Boolean));
+    let posts = state.feedPosts.filter((post) => !allowed.size || allowed.has(post.gameId));
+    if (tab === "question") {
+      posts = posts.filter((post) => post.type === "question")
+        .sort((left, right) => Number((left.commentCount || 0) > 0) - Number((right.commentCount || 0) > 0)
+          || String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+    } else if (tab === "guide") {
+      posts = posts.filter((post) => post.type === "guide")
+        .sort((left, right) => ((right.likesCount || 0) * 2 + (right.commentCount || 0) * 3) - ((left.likesCount || 0) * 2 + (left.commentCount || 0) * 3)
+          || String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+    } else if (tab === "popular") {
+      posts = [...posts].sort((left, right) => ((right.likesCount || 0) * 2 + (right.commentCount || 0) * 3) - ((left.likesCount || 0) * 2 + (left.commentCount || 0) * 3)
+        || String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+    } else {
+      posts = [...posts].sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+    }
+    const visible = posts.slice(0, limit);
+    if (!visible.length) {
+      const emptyLabel = tab === "question"
+        ? "아직 등록된 질문 글이 없어요."
+        : tab === "guide"
+          ? "아직 등록된 공략 글이 없어요."
+          : state.feedPosts.length
+            ? "선택한 게임의 커뮤니티 글이 아직 없어요."
+            : "첫 커뮤니티 글을 남겨 대화를 시작해 보세요.";
+      return `<div class="home-section-empty"><strong>${escapeHTML(emptyLabel)}</strong><p>공지 질문, 플레이 공략, 패치 후기를 자유롭게 나눌 수 있습니다.</p><a class="secondary-button home-empty-cta" href="#/community/new?gameId=${encodeURIComponent(writeGameId)}${tab === "question" || tab === "guide" ? `&type=${tab}` : ""}">첫 글 작성하기 →</a></div>`;
+    }
+    return `<div class="home-community-list">${visible.map((post) => {
+      const likes = post.likesCount || 0;
+      const comments = post.commentCount || 0;
+      return `<a class="home-community-row" href="${escapeHTML(linkToPost(post))}">
+        <div class="home-community-row-top">
+          <span class="home-game-tag">${escapeHTML(gameName(post.gameId))}</span>
+          <span class="community-type-badge type-${escapeHTML(post.type)}">${escapeHTML(typeNames[post.type] || "게시글")}</span>
+          ${post.official ? `<span class="home-official-link-tag">공지 연결</span>` : ""}
+          <time>${escapeHTML(formatDate(post.createdAt))}</time>
+        </div>
+        <strong class="home-community-row-title">${escapeHTML(post.title)}</strong>
+        <div class="home-community-row-meta">
+          <span>${escapeHTML(post.author?.displayName || "게스트")}</span>
+          <span class="home-community-stats"><span>♡ ${likes}</span><span>댓글 ${comments}</span></span>
+        </div>
+      </a>`;
+    }).join("")}</div>`;
+  }
+
   async function loadSession() {
     try {
       const result = await api("/api/community/session");
@@ -640,7 +687,7 @@
   }
 
   window.todaypatchCommunity = {
-    init, bootstrap, loadRoute, renderPage, renderAccountControl, renderPreview, renderNotificationItems, unreadNotificationCount, markAllNotificationsRead, refreshNotifications: loadNotifications,
+    init, bootstrap, loadRoute, renderPage, renderAccountControl, renderPreview, renderHomePreview, renderNotificationItems, unreadNotificationCount, markAllNotificationsRead, refreshNotifications: loadNotifications,
     hasRegisteredAccount: () => Boolean(state.user?.email),
     getPreferences: getPreferenceSnapshot, applyPreferences: (preferences) => context?.applyPreferences?.(preferences), schedulePreferenceSync,
     isAction, handleAction, handleInput, handleChange, ownsForm, handleSubmit,
