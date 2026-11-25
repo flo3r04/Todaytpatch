@@ -32,7 +32,7 @@ const displayNewsCategory = (item) => isAionCmStory(item) ? "CM 아지트" : ite
 const displayNewsSource = (item) => isAionCmStory(item)
   ? String(item.source || "아이온2 공식 CM 아지트").replace(/CM 이야기/g, "CM 아지트")
   : item.source;
-const state = { filter: "전체", query: "", gameQuery: "", dokkaebiQuery: "", dokkaebiFilter: "전체", gameSearchFocused: false, notificationsOpen: false, tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [] };
+const state = { filter: "전체", query: "", gameQuery: "", dokkaebiQuery: "", dokkaebiFilter: "전체", gameSearchFocused: false, notificationsOpen: false, tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [], detailTab: "sections", detailItemId: "" };
 const app = document.querySelector("#app");
 let releaseCountdownTimer = null;
 const syncedPreferenceKeys = {
@@ -1126,12 +1126,38 @@ function renderPatchComparison(item) {
   const comparison = buildPatchComparison(item);
   const previous = comparison?.previous;
   if (!previous) {
-    return `<section class="article-panel patch-comparison"><div class="panel-heading"><h2>이전 패치와 비교</h2><span class="summary-badge">패치 비교</span></div><p>비교할 이전 업데이트 분석이 아직 없습니다. 크롤러는 기준일 이후 업데이트와 직전 업데이트를 함께 수집합니다. 다음 크롤링 후 새 업데이트 글에서 파트별 비교를 확인할 수 있습니다.</p></section>`;
+    return `<div class="patch-diff-empty"><strong>비교할 이전 업데이트 분석이 아직 없습니다.</strong><span>크롤러는 기준일 이후 업데이트와 직전 업데이트를 함께 수집합니다. 다음 크롤링 후 새 업데이트 글에서 파트별 비교를 확인할 수 있습니다.</span></div>`;
   }
-  const renderSection = (section, label) => `<article class="patch-diff-item"><div><span>${label}</span><strong>${escapeHTML(section.heading)}</strong></div><p>${renderSentenceLines(section.summary || "")}</p>${section.importantDetails?.length ? `<ul>${section.importantDetails.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>` : ""}</article>`;
-  const renderChanged = (section) => `<article class="patch-diff-item"><div><span>공통 파트 · 변경 후보</span><strong>${escapeHTML(section.heading)}</strong></div>${section.currentSummary ? `<p><b>이번 분석</b><br />${renderSentenceLines(section.currentSummary)}</p>` : ""}${section.newDetails.length ? `<ul>${section.newDetails.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>` : ""}${section.previousSummary && normalizeChatText(section.currentSummary) !== normalizeChatText(section.previousSummary) ? `<details><summary>이전 분석 보기</summary><p>${renderSentenceLines(section.previousSummary)}</p></details>` : ""}${section.previousDetails.length ? `<details><summary>이전 중요 항목 ${section.previousDetails.length}개 보기</summary><ul>${section.previousDetails.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul></details>` : ""}</article>`;
+  const sections = Array.isArray(item.sections) ? item.sections : [];
+  const sectionIndexByHeading = new Map(sections.map((section, index) => [normalizeChatText(section.heading), index]));
+  const renderChanged = (section) => `<article class="patch-diff-item"><div><span>공통 파트 · 변경 후보</span><strong>${escapeHTML(section.heading)}</strong></div>${section.currentSummary ? `<p><b>이번 분석</b><br />${renderSentenceLines(section.currentSummary)}</p>` : ""}${section.newDetails.length ? `<ul>${section.newDetails.map((detail) => `<li>${highlightDetailText(detail)}</li>`).join("")}</ul>` : ""}${section.previousSummary && normalizeChatText(section.currentSummary) !== normalizeChatText(section.previousSummary) ? `<details><summary>이전 분석 보기</summary><p>${renderSentenceLines(section.previousSummary)}</p></details>` : ""}${section.previousDetails.length ? `<details><summary>이전 중요 항목 ${section.previousDetails.length}개 보기</summary><ul>${section.previousDetails.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul></details>` : ""}</article>`;
+  const renderRemovedSection = (section) => `<article class="patch-diff-item patch-diff-removed"><div><span>이전 패치 전용</span><strong>${escapeHTML(section.heading)}</strong></div><p>${renderSentenceLines(section.summary || "")}</p>${section.importantDetails?.length ? `<ul>${section.importantDetails.slice(0, 4).map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>${section.importantDetails.length > 4 ? `<details><summary>나머지 ${section.importantDetails.length - 4}개 항목 보기</summary><ul>${section.importantDetails.slice(4).map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul></details>` : ""}` : ""}</article>`;
   const changes = comparison.addedSections.length || comparison.changedSections.length || comparison.removedSections.length;
-  return `<section class="article-panel patch-comparison"><div class="panel-heading"><h2>이전 패치와 비교</h2><span class="summary-badge">${escapeHTML(previous.date || "이전 업데이트")}</span></div><p class="patch-comparison-note"><a href="${escapeHTML(previous.url || "")}" target="_blank" rel="noopener noreferrer">이전 업데이트 원문 ↗</a>과 이번 분석의 파트 제목·중요 항목을 비교했습니다. 분석 문구 차이로 변경 후보가 잡힐 수 있으니, 실제 적용 내용은 두 원문에서 확인해 주세요.</p>${!changes ? `<div class="patch-diff-empty"><strong>분석된 항목에서 뚜렷한 차이를 찾지 못했습니다.</strong><span>세부 수치와 적용 범위는 각 업데이트 원문에서 확인해 주세요.</span></div>` : `<div class="patch-diff-groups">${comparison.addedSections.length ? `<section class="patch-diff-group"><h3>이번 업데이트의 새 파트</h3>${comparison.addedSections.map((section) => renderSection(section, "새 파트")).join("")}</section>` : ""}${comparison.changedSections.length ? `<section class="patch-diff-group"><h3>공통 파트의 변경 후보</h3>${comparison.changedSections.map(renderChanged).join("")}</section>` : ""}${comparison.removedSections.length ? `<section class="patch-diff-group"><h3>이전 분석에만 있는 파트</h3>${comparison.removedSections.map((section) => renderSection(section, "이전 파트")).join("")}</section>` : ""}</div>`}<a class="patch-diff-current-source" href="${escapeHTML(item.url || "")}" target="_blank" rel="noopener noreferrer">이번 업데이트 원문 ↗</a></section>`;
+  const addedChips = comparison.addedSections.length ? `<section class="patch-diff-group"><h3>이번 업데이트에서 새로 추가된 파트</h3><p class="patch-diff-hint">중복을 줄이기 위해 제목만 표시합니다. 항목을 누르면 해당 파트 상세로 바로 이동합니다.</p><div class="patch-added-chips">${comparison.addedSections.map((section) => {
+    const targetIdx = sectionIndexByHeading.get(normalizeChatText(section.heading));
+    const count = Array.isArray(section.importantDetails) ? section.importantDetails.length : 0;
+    return Number.isInteger(targetIdx)
+      ? `<button type="button" class="patch-added-chip" data-action="jump-to-section" data-section-index="${targetIdx}"><strong>${escapeHTML(section.heading)}</strong>${count ? `<span>${count}건</span>` : ""}<i aria-hidden="true">→</i></button>`
+      : `<span class="patch-added-chip static"><strong>${escapeHTML(section.heading)}</strong>${count ? `<span>${count}건</span>` : ""}</span>`;
+  }).join("")}</div></section>` : "";
+  const changedBlock = comparison.changedSections.length
+    ? `<section class="patch-diff-group"><h3>공통 파트의 변경 후보</h3>${comparison.changedSections.map(renderChanged).join("")}</section>`
+    : "";
+  const removedBlock = comparison.removedSections.length
+    ? `<details class="patch-removed-accordion"><summary><span>이전 패치(${escapeHTML(previous.date || "이전")})에만 있던 파트 ${comparison.removedSections.length}개 보기</span></summary><div class="patch-removed-list">${comparison.removedSections.map(renderRemovedSection).join("")}</div></details>`
+    : "";
+  return `
+    <div class="patch-comparison-content">
+      <div class="patch-diff-stats">
+        <div><span>비교 기준</span><strong>${escapeHTML(previous.date || "이전 업데이트")}</strong></div>
+        <div><span>새 파트</span><strong>${comparison.addedSections.length}개</strong></div>
+        <div><span>변경 후보</span><strong>${comparison.changedSections.length}개</strong></div>
+        <div><span>이전 전용</span><strong>${comparison.removedSections.length}개</strong></div>
+      </div>
+      <p class="patch-comparison-note"><a href="${escapeHTML(previous.url || "")}" target="_blank" rel="noopener noreferrer">이전 업데이트 원문 ↗</a>과 이번 업데이트의 파트·중요 항목을 비교했습니다. 실제 적용 수치는 두 공식 원문에서 확인해 주세요.</p>
+      ${!changes ? `<div class="patch-diff-empty"><strong>분석된 항목에서 뚜렷한 차이를 찾지 못했습니다.</strong><span>세부 수치와 적용 범위는 각 업데이트 원문에서 확인해 주세요.</span></div>` : `<div class="patch-diff-groups">${changedBlock}${addedChips}${removedBlock}</div>`}
+      <a class="patch-diff-current-source" href="${escapeHTML(item.url || "")}" target="_blank" rel="noopener noreferrer">이번 업데이트 원문 ↗</a>
+    </div>`;
 }
 
 function buildPatchTaskRecommendations() {
@@ -1192,36 +1218,151 @@ function renderTasksPage() {
     </main>`;
 }
 
+function splitSentences(value) {
+  return String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .split(/\n+/)
+    .flatMap((paragraph) => paragraph.trim().replace(/[ \t]+/g, " ")
+      .replace(/([가-힣][.!?]["'”’」』]?)\s+(?=[A-Za-z0-9가-힣“‘"'(])/gu, "$1\n")
+      .split(/\n+/))
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function highlightDetailText(value) {
+  return escapeHTML(value)
+    .replace(/(상향|증가|추가|개선|확장|신규|초기화|재적용)/gu, '<mark class="detail-hl-up">$1</mark>')
+    .replace(/(하향|감소|제거|제한|불가|종료|만료|미지급)/gu, '<mark class="detail-hl-down">$1</mark>')
+    .replace(/(\d[\d,.]*(?:%|원|키나|칸|초|분|시|회|개|단계|중첩|월\s*\d{1,2}일))/gu, '<strong class="detail-hl-num">$1</strong>');
+}
+
+function renderDetailEvents(events) {
+  if (!Array.isArray(events) || !events.length) return "";
+  const typeLabel = { event: "이벤트", season: "시즌·패스", "server-transfer": "서버 이전", "reward-deadline": "보상 기한", policy: "정책", other: "일정" };
+  const formatRange = (event) => {
+    const start = event.startAt ? formatDisplayDate(event.startAt) : "";
+    const end = event.endAt ? formatDisplayDate(event.endAt) : "";
+    const deadline = event.deadlineAt ? `마감 ${formatDisplayDate(event.deadlineAt)}` : "";
+    if (start && end && start !== end) return `${start} ~ ${end}${deadline ? ` · ${deadline}` : ""}`;
+    if (start) return `${start}${deadline ? ` · ${deadline}` : ""}`;
+    return deadline || "일정 확인";
+  };
+  const renderCard = (event) => `
+    <div class="detail-event-card">
+      <div class="detail-event-top"><span class="detail-event-type">${escapeHTML(typeLabel[event.type] || "일정")}</span><span class="detail-event-date">${escapeHTML(formatRange(event))}</span></div>
+      <strong>${escapeHTML(event.title)}</strong>
+      ${event.reward && event.reward !== "없음" ? `<p class="detail-event-meta"><b>보상</b> ${escapeHTML(event.reward)}</p>` : ""}
+      ${Array.isArray(event.conditions) && event.conditions.length ? `<p class="detail-event-meta"><b>조건</b> ${escapeHTML(event.conditions.join(" · "))}</p>` : ""}
+    </div>`;
+  const visible = events.slice(0, 4);
+  const hidden = events.slice(4);
+  return `
+    <div class="detail-events-wrap">
+      <div class="detail-events-head"><h3>핵심 일정 · 혜택</h3><span>${events.length}건</span></div>
+      <div class="detail-events-grid">${visible.map(renderCard).join("")}</div>
+      ${hidden.length ? `<details class="detail-more-box detail-events-more"><summary>나머지 일정 ${hidden.length}건 더보기</summary><div class="detail-events-grid">${hidden.map(renderCard).join("")}</div></details>` : ""}
+    </div>`;
+}
+
 function renderDetail(id) {
   const item = newsItems.find((news) => news.id === id);
   if (!item || !isAionNewsItem(item) || ((item.sourceKey === "cm-story" || item.category === "CM 이야기" || item.category === "CM 아지트") && !isAionCmStory(item))) return `<main class="page-width not-found"><h1>정보를 찾을 수 없어요.</h1><a class="primary-button" href="#/aion2">아이온2 정보로 돌아가기</a></main>`;
+  const sectionQuery = new URLSearchParams(currentRoute().split("?")[1] || "").get("section");
+  const targetSectionIndex = sectionQuery && /^\d+$/.test(sectionQuery) ? Number(sectionQuery) : -1;
+  if (state.detailItemId !== item.id) {
+    state.detailItemId = item.id;
+    state.detailTab = "sections";
+  }
+  if (targetSectionIndex >= 0) state.detailTab = "sections";
+  const hasComparison = item.sourceKey === "update";
+  if (state.detailTab === "comparison" && !hasComparison) state.detailTab = "sections";
+
   const bookmarked = isSaved(item.id);
-  const summary = item.summary || item.excerpt || "요약 정보를 준비하지 못했습니다. 공식 원문을 확인해 주세요.";
-  const analysis = item.analysis || "분석 정보가 없습니다. 아래 공식 원문에서 자세한 내용을 확인해 주세요.";
+  const summaryLines = splitSentences(item.summary || item.excerpt || "요약 정보를 준비하지 못했습니다. 공식 원문을 확인해 주세요.");
+  const analysisLines = splitSentences(item.analysis || "");
   const keyPoints = Array.isArray(item.keyPoints) ? item.keyPoints : [];
   const sections = Array.isArray(item.sections) ? item.sections : [];
-  const detailedSections = sections.length
-    ? `<div class="analysis-sections"><h3>원문 파트별 핵심 내용</h3>${sections.map((section, index) => {
-      const details = Array.isArray(section.importantDetails) ? section.importantDetails : [];
-      return `<section class="analysis-section" id="analysis-section-${index}"><h4>${escapeHTML(section.heading)}</h4><p>${renderSentenceLines(section.summary)}</p>${details.length ? `<ul>${details.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>` : ""}</section>`;
-    }).join("")}</div>`
-    : keyPoints.length ? `<ul class="key-point-list">${keyPoints.map((point) => `<li>${escapeHTML(point)}</li>`).join("")}</ul>` : "";
+  const events = Array.isArray(item.events) ? item.events : [];
   const sourceRoute = { notice: "notices", update: "updates", "cm-story": "cm-stories" }[item.sourceKey] || "news";
+
+  const DETAIL_PREVIEW_LIMIT = 4;
+  const openCountDefault = sections.length <= 3 ? sections.length : 2;
+  const sectionsHtml = sections.length
+    ? `<div class="detail-sections-toolbar"><p>관심 있는 파트만 펼쳐서 확인할 수 있습니다.</p><button type="button" class="text-toggle-button" data-action="toggle-all-sections" data-expanded="${sections.length <= 3 ? "true" : "false"}">${sections.length <= 3 ? "모두 접기" : "모두 펼치기"}</button></div>
+      <div class="analysis-sections">${sections.map((section, index) => {
+        const details = Array.isArray(section.importantDetails) ? section.importantDetails : [];
+        const isOpen = index < openCountDefault || index === targetSectionIndex;
+        const previewDetails = details.slice(0, DETAIL_PREVIEW_LIMIT);
+        const extraDetails = details.slice(DETAIL_PREVIEW_LIMIT);
+        const sectionSummaryLines = splitSentences(section.summary);
+        return `
+          <details class="analysis-section-card" id="analysis-section-${index}" ${isOpen ? "open" : ""}>
+            <summary class="analysis-section-trigger">
+              <span class="section-index">${String(index + 1).padStart(2, "0")}</span>
+              <span class="section-title-group">
+                <strong>${escapeHTML(section.heading)}</strong>
+                ${sectionSummaryLines[0] ? `<small class="section-preview-line">${escapeHTML(sectionSummaryLines[0])}</small>` : ""}
+              </span>
+              ${details.length ? `<span class="section-count-pill">${details.length}건</span>` : ""}
+              <span class="section-chevron" aria-hidden="true">▾</span>
+            </summary>
+            <div class="analysis-section-body">
+              ${sectionSummaryLines.length ? `<div class="section-summary-copy">${sectionSummaryLines.map((line) => `<p>${highlightDetailText(line)}</p>`).join("")}</div>` : ""}
+              ${previewDetails.length ? `<ul class="section-detail-list">${previewDetails.map((detail) => `<li>${highlightDetailText(detail)}</li>`).join("")}</ul>` : ""}
+              ${extraDetails.length ? `<details class="detail-more-box"><summary>나머지 ${extraDetails.length}개 세부 항목 더보기</summary><ul class="section-detail-list">${extraDetails.map((detail) => `<li>${highlightDetailText(detail)}</li>`).join("")}</ul></details>` : ""}
+            </div>
+          </details>`;
+      }).join("")}</div>`
+    : keyPoints.length
+      ? `<ul class="key-point-list">${keyPoints.map((point) => `<li>${highlightDetailText(point)}</li>`).join("")}</ul>`
+      : `<p class="detail-tab-empty">파트별 세부 항목이 없습니다. 공식 원문을 확인해 주세요.</p>`;
+
+  const analysisHtml = analysisLines.length
+    ? `<div class="analysis-tab-content">
+        <p class="analysis-tab-lead">이번 공지에서 이용자가 직접 챙겨야 할 영향과 주의사항을 정리했습니다.</p>
+        <ul class="analysis-checklist">${analysisLines.map((line) => `<li>${highlightDetailText(line)}</li>`).join("")}</ul>
+        <div class="analysis-tab-links"><a class="secondary-button" href="#/aion2/tasks">패치 후 할 일에서 체크하기 →</a><a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 링크 열기 <span aria-hidden="true">↗</span></a></div>
+      </div>`
+    : `<p class="detail-tab-empty">이용자 관점 분석 정보가 없습니다. 공식 원문을 확인해 주세요.</p>`;
+
+  const comparisonHtml = hasComparison ? renderPatchComparison(item) : "";
+  const activeTabBody = state.detailTab === "analysis"
+    ? analysisHtml
+    : state.detailTab === "comparison" && hasComparison
+      ? comparisonHtml
+      : sectionsHtml;
+
+  const tocHtml = sections.length > 1
+    ? `<section class="source-panel detail-toc-panel"><span class="page-eyebrow">SECTION JUMP</span><h2>파트 바로가기</h2><nav class="detail-toc-list" aria-label="파트 바로가기">${sections.map((section, index) => `<button type="button" class="detail-toc-item" data-action="jump-to-section" data-section-index="${index}"><span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHTML(section.heading)}</strong></button>`).join("")}</nav></section>`
+    : "";
+
   return `
     <main class="page-width game-page detail-page">
-      ${renderGameIntro("게시물 상세", "AI가 핵심 내용을 정리하고 분석한 결과를 확인하세요.", "게시물 상세")}
+      ${renderGameIntro("게시물 상세", "핵심 요약부터 파트별 상세·비교까지 한눈에 확인하세요.", "게시물 상세")}
       <div class="detail-layout">
         <article class="detail-main">
           <div class="detail-title-row"><div><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><h1>${escapeHTML(item.title)}</h1></div><button class="bookmark-button detail-bookmark ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.75A1.75 1.75 0 0 1 8.25 3h7.5a1.75 1.75 0 0 1 1.75 1.75V21l-5.5-3.8L6.5 21V4.75Z" /></svg></button></div>
-          <section class="article-panel summary-panel"><div class="panel-heading"><h2>전체 내용 요약</h2><span class="summary-badge">전체 흐름</span></div><p class="summary-copy">${renderSentenceLines(summary)}</p></section>
-          <section class="article-panel analysis-panel"><div class="panel-heading"><h2>AI 분석</h2><span class="example-label">이용자 관점</span></div><p class="analysis-copy">${renderSentenceLines(analysis)}</p>${detailedSections}<a class="article-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 링크 열기 <span aria-hidden="true">↗</span></a></section>
-          ${renderPatchComparison(item)}
+          <section class="article-panel summary-panel">
+            <div class="panel-heading"><h2>1차 핵심 요약</h2><span class="summary-badge">전체 흐름</span></div>
+            <ul class="summary-list">${summaryLines.map((line) => `<li>${highlightDetailText(line)}</li>`).join("")}</ul>
+            ${renderDetailEvents(events)}
+          </section>
+          <section class="article-panel detail-explorer" aria-label="상세 분석 탐색">
+            <div class="detail-tabs" role="tablist" aria-label="상세 정보 탭">
+              <button type="button" role="tab" class="detail-tab ${state.detailTab === "sections" ? "active" : ""}" aria-selected="${state.detailTab === "sections"}" data-action="detail-tab" data-tab="sections">파트별 핵심 ${sections.length ? `<span>${sections.length}</span>` : ""}</button>
+              <button type="button" role="tab" class="detail-tab ${state.detailTab === "analysis" ? "active" : ""}" aria-selected="${state.detailTab === "analysis"}" data-action="detail-tab" data-tab="analysis">이용자 관점 분석</button>
+              ${hasComparison ? `<button type="button" role="tab" class="detail-tab ${state.detailTab === "comparison" ? "active" : ""}" aria-selected="${state.detailTab === "comparison"}" data-action="detail-tab" data-tab="comparison">이전 패치 비교</button>` : ""}
+            </div>
+            <div class="detail-tab-panel" role="tabpanel">${activeTabBody}</div>
+          </section>
           <section class="article-panel community-notice-actions"><div><span class="page-eyebrow">DISCUSS THIS NOTICE</span><h2>이 공지에 대해 이야기해 보세요</h2><p>공식 원문과 필요한 분석 항목을 연결해 질문하거나 토론할 수 있습니다.</p></div><div><a class="secondary-button" href="#/community/new?gameId=aion2&type=question&newsId=${encodeURIComponent(item.id)}">이 공지로 질문하기</a><a class="primary-button" href="#/community/new?gameId=aion2&type=discussion&newsId=${encodeURIComponent(item.id)}">토론 시작하기</a></div></section>
-          <section class="article-panel"><div class="panel-heading"><h2>수집 정보</h2><span class="example-label">공식 게시판</span></div><dl class="info-list"><div><dt>게시판</dt><dd>${escapeHTML(displayNewsSource(item))}</dd></div><div><dt>게시일</dt><dd>${escapeHTML(item.date)}</dd></div><div><dt>수정일</dt><dd>${item.updatedAt ? escapeHTML(formatDisplayDate(item.updatedAt)) : "수정 기록 없음"}</dd></div></dl></section>
           <section class="article-panel action-panel"><div><strong>정보가 정확하지 않나요?</strong><p>날짜, 수치, 직업 정보나 출처 문제를 알려주세요.</p></div><button class="secondary-button" data-action="report">정보 신고</button></section>
           <a class="back-link" href="#/aion2/${sourceRoute}">← ${escapeHTML(displayNewsCategory(item))} 목록</a>
         </article>
-        <aside class="detail-side"><section class="source-panel"><span class="page-eyebrow">OFFICIAL SOURCE</span><h2>공식 게시물</h2><p>${escapeHTML(item.source)}에서 수집한 내용을 요약했습니다. 정확한 조건과 상세 내용은 원문에서 확인해 주세요.</p><div class="source-status-list"><div><span>게시일</span><strong>${escapeHTML(item.date)}</strong></div><div><span>표시 내용</span><strong>요약 · 분석</strong></div></div><a class="secondary-button full-width" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 열기 <span aria-hidden="true">↗</span></a></section></aside>
+        <aside class="detail-side">
+          <section class="source-panel"><span class="page-eyebrow">OFFICIAL SOURCE</span><h2>공식 게시물</h2><p>${escapeHTML(displayNewsSource(item))}에서 수집한 내용을 정리했습니다. 정확한 조건은 원문에서 확인해 주세요.</p><div class="source-status-list"><div><span>게시판</span><strong>${escapeHTML(displayNewsCategory(item))}</strong></div><div><span>게시일</span><strong>${escapeHTML(item.date)}</strong></div><div><span>수정일</span><strong>${item.updatedAt ? escapeHTML(formatDisplayDate(item.updatedAt)) : "기록 없음"}</strong></div></div><a class="secondary-button full-width" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">공식 본문 열기 <span aria-hidden="true">↗</span></a></section>
+          ${tocHtml}
+        </aside>
       </div>
     </main>`;
 }
@@ -1651,7 +1792,13 @@ function render() {
   }
   const sectionIndex = new URLSearchParams(currentRoute().split("?")[1] || "").get("section");
   if (kind === "detail" && sectionIndex && /^\d+$/.test(sectionIndex)) {
-    window.requestAnimationFrame(() => app.querySelector(`#analysis-section-${Number(sectionIndex)}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    window.requestAnimationFrame(() => {
+      const target = app.querySelector(`#analysis-section-${Number(sectionIndex)}`);
+      if (target) {
+        if (target.tagName === "DETAILS") target.open = true;
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
   }
 }
 
@@ -1885,6 +2032,37 @@ app.addEventListener("click", (event) => {
     checked[id] = !checked[id];
     writeStorage("todaypatch.tasks", checked);
     render();
+  }
+  if (action === "detail-tab") {
+    const nextTab = button.dataset.tab;
+    if (["sections", "analysis", "comparison"].includes(nextTab) && state.detailTab !== nextTab) {
+      state.detailTab = nextTab;
+      render();
+    }
+  }
+  if (action === "toggle-all-sections") {
+    const cards = [...app.querySelectorAll(".analysis-section-card")];
+    const shouldExpand = button.dataset.expanded !== "true";
+    cards.forEach((card) => { card.open = shouldExpand; });
+    button.dataset.expanded = String(shouldExpand);
+    button.textContent = shouldExpand ? "모두 접기" : "모두 펼치기";
+  }
+  if (action === "jump-to-section") {
+    const idx = Number(button.dataset.sectionIndex);
+    if (!Number.isInteger(idx) || idx < 0) return;
+    const focusSection = () => {
+      const target = app.querySelector(`#analysis-section-${idx}`);
+      if (!target) return;
+      if (target.tagName === "DETAILS") target.open = true;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    if (state.detailTab !== "sections") {
+      state.detailTab = "sections";
+      render();
+      window.requestAnimationFrame(focusSection);
+    } else {
+      focusSection();
+    }
   }
   if (action === "mobile-menu") {
     const nav = app.querySelector("#main-nav");
