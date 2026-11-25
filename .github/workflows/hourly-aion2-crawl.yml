@@ -1,0 +1,47 @@
+name: Hourly AION2 crawl
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hourly-aion2-crawl
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Crawl and analyze new AION2 posts
+        run: node scripts/crawl-aion2.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AION2_CRAWL_SINCE: "2026-11-18"
+
+      - name: Commit data when it changed
+        run: |
+          if git diff --quiet -- data/aion2.js; then
+            echo "No new or updated post data; skipping commit."
+            exit 0
+          fi
+
+          # Vercel Hobby deployments require the project owner to author the commit.
+          # For scheduled runs GitHub assigns the cron editor as GITHUB_ACTOR.
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
+          git add -- data/aion2.js
+          git commit -m "chore(data): 아이온2 공지 자동 업데이트"
+          git push origin HEAD:main

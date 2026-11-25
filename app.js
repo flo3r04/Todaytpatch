@@ -374,8 +374,6 @@ function renderHeader() {
     ["공지", "#/aion2/notices", "notices"],
     ["업데이트", "#/aion2/updates", "updates"],
     ["CM 아지트", "#/aion2/cm-stories", "cm-stories"],
-    ["할 일", "#/aion2/tasks", "tasks"],
-    ["북마크", "#/aion2/bookmarks", "bookmarks"],
     ["커뮤니티", "#/community?gameId=aion2", "community"],
   ];
   const detailItem = kind === "detail" ? newsItems.find((item) => item.id === detailId()) : null;
@@ -401,8 +399,21 @@ function renderHeader() {
         <div class="header-controls ${inGame ? "in-game" : ""}">
           <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
           ${renderNotificationControl()}
-          ${window.todaypatchCommunity?.renderAccountControl() || ""}
-          <a class="dashboard-link ${kind === "dashboard" ? "active" : ""}" href="#/dashboard" ${kind === "dashboard" ? 'aria-current="page"' : ""} aria-label="대시보드"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.7-3.2 3-5 6.5-5s5.8 1.8 6.5 5"/></svg><span>대시보드</span></a>
+          <div class="my-page-wrap">
+            <button id="my-page-toggle" class="my-page-toggle ${["dashboard", "bookmarks", "tasks"].includes(kind) ? "active" : ""}" type="button" data-action="toggle-my-page" aria-label="마이페이지 메뉴" aria-controls="my-page-menu" aria-expanded="false" title="마이페이지">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.7-3.2 3-5 6.5-5s5.8 1.8 6.5 5"/></svg><span>마이페이지</span>
+            </button>
+            <section id="my-page-menu" class="my-page-menu" aria-label="마이페이지" hidden>
+              <div class="my-page-menu-heading"><span class="page-eyebrow">MY TODAYPATCH</span><strong>마이페이지</strong></div>
+              <nav class="my-page-links" aria-label="내 기능">
+                <a class="${kind === "dashboard" ? "active" : ""}" href="#/dashboard">내 대시보드</a>
+                <a class="${kind === "bookmarks" ? "active" : ""}" href="#/aion2/bookmarks">북마크</a>
+                <a class="${kind === "tasks" ? "active" : ""}" href="#/aion2/tasks">패치 후 할 일</a>
+                <button type="button" data-action="open-tutorial">이용 방법</button>
+              </nav>
+              <div class="my-page-account">${window.todaypatchCommunity?.renderAccountControl() || ""}</div>
+            </section>
+          </div>
         </div>
       </div>
     </header>`;
@@ -1662,6 +1673,12 @@ function showToast(message) {
 
 app.addEventListener("click", (event) => {
   if (!event.target.closest(".follow-context-menu")) closeFollowContextMenu();
+  const myPageWrap = event.target.closest(".my-page-wrap");
+  if (!myPageWrap) {
+    const myPageMenu = app.querySelector("#my-page-menu");
+    if (myPageMenu) myPageMenu.hidden = true;
+    app.querySelector("#my-page-toggle")?.setAttribute("aria-expanded", "false");
+  }
   const notificationWrap = event.target.closest(".notification-wrap");
   if (!notificationWrap && state.notificationsOpen) {
     state.notificationsOpen = false;
@@ -1675,6 +1692,10 @@ app.addEventListener("click", (event) => {
     return;
   }
   const { action, id } = button.dataset;
+  if (myPageWrap && action !== "toggle-my-page") {
+    app.querySelector("#my-page-menu")?.setAttribute("hidden", "");
+    app.querySelector("#my-page-toggle")?.setAttribute("aria-expanded", "false");
+  }
   if (window.todaypatchCommunity?.isAction(action)) {
     event.preventDefault();
     void window.todaypatchCommunity.handleAction(action, button);
@@ -1685,6 +1706,12 @@ app.addEventListener("click", (event) => {
     app.querySelector(".notification-popover").hidden = !state.notificationsOpen;
     button.setAttribute("aria-expanded", String(state.notificationsOpen));
     if (state.notificationsOpen) window.todaypatchCommunity?.refreshNotifications().then(render);
+  }
+  if (action === "toggle-my-page") {
+    const menu = app.querySelector("#my-page-menu");
+    const open = Boolean(menu?.hidden);
+    if (menu) menu.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
   }
   if (action === "open-notification") {
     event.preventDefault();
@@ -1794,7 +1821,11 @@ app.addEventListener("click", (event) => {
     views[id] = (Number(views[id]) || 0) + 1;
     writeStorage("todaypatch.articleViews", views);
   }
-  if (action === "open-tutorial") openTutorial();
+  if (action === "open-tutorial") {
+    app.querySelector("#my-page-menu")?.setAttribute("hidden", "");
+    app.querySelector("#my-page-toggle")?.setAttribute("aria-expanded", "false");
+    openTutorial();
+  }
   if (action === "tutorial-previous") {
     state.tutorialStep = Math.max(0, state.tutorialStep - 1);
     renderTutorialStep();
@@ -1902,6 +1933,12 @@ app.addEventListener("focusout", (event) => {
 app.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeFollowContextMenu();
+    const myPageMenu = app.querySelector("#my-page-menu");
+    if (myPageMenu && !myPageMenu.hidden) {
+      myPageMenu.hidden = true;
+      app.querySelector("#my-page-toggle")?.setAttribute("aria-expanded", "false");
+      app.querySelector("#my-page-toggle")?.focus();
+    }
     return;
   }
   if ((event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && event.target.closest("[data-game-menu]")) {

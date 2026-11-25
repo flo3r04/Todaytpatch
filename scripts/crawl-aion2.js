@@ -198,6 +198,20 @@ async function crawlArticle({ article, board, comparisonOnly = false }) {
   };
 }
 
+function listedUpdatedAt(article) {
+  return article.timestamps?.updatedAt || article.timestamps?.updateDateTime || null;
+}
+
+function needsArticleRefresh(entry, existingItem) {
+  if (!existingItem) return true;
+  const listedTimestamp = listedUpdatedAt(entry.article);
+  if (!listedTimestamp) return false;
+  if (!existingItem.updatedAt) return true;
+  const listedTime = Date.parse(listedTimestamp);
+  const existingTime = Date.parse(existingItem.updatedAt);
+  return Number.isFinite(listedTime) && (!Number.isFinite(existingTime) || listedTime > existingTime);
+}
+
 function responseOutputText(response) {
   const parts = response.candidates?.[0]?.content?.parts || [];
   return parts
@@ -484,14 +498,13 @@ async function summarizeWithAI(items) {
   return summarized;
 }
 
-async function readExistingPatchBaseline() {
+async function readExistingGameData() {
   try {
     const source = await fs.readFile(dataPath, "utf8");
     const assignment = "window.todaypatchGameData = ";
     if (!source.startsWith(assignment)) return null;
     const data = JSON.parse(source.slice(assignment.length).replace(/;\s*$/, ""));
-    const baseline = data.aion2?.patchBaseline;
-    return baseline && typeof baseline === "object" ? baseline : null;
+    return data.aion2 && typeof data.aion2 === "object" ? data.aion2 : null;
   } catch {
     return null;
   }
@@ -500,24 +513,48 @@ async function readExistingPatchBaseline() {
 async function main() {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(sinceDate)) throw new Error("AION2_CRAWL_SINCE는 YYYY-MM-DD 형식이어야 합니다.");
   if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY 환경 변수가 필요합니다. 기존 수집 데이터는 변경하지 않습니다.");
+  const existingGameData = await readExistingGameData();
+  const existingItems = Array.isArray(existingGameData?.newsItems) ? existingGameData.newsItems : [];
+  const existingById = new Map(existingItems.map((item) => [item.id, item]));
   const boardArticles = (await Promise.all(boards.map(crawlBoard))).flat();
   const regularArticles = boardArticles.filter((entry) => !entry.comparisonOnly);
+  const articlesToRefresh = regularArticles.filter((entry) => needsArticleRefresh(
+    entry,
+    existingById.get(`${entry.board.key}-${entry.article.id}`),
+  ));
   const baselineEntry = boardArticles.find((entry) => entry.comparisonOnly);
-  const crawledItems = await mapWithConcurrency(regularArticles, 4, crawlArticle);
+  const crawledItems = await mapWithConcurrency(articlesToRefresh, 4, crawlArticle);
   crawledItems.sort((left, right) => new Date(right.postedAt) - new Date(left.postedAt));
-  if (crawledItems.length === 0) throw new Error(`기준일 ${sinceDate} 이후 게시물이 없습니다. 기존 데이터는 유지합니다.`);
 
-  const summarizedItems = await summarizeWithAI(crawledItems);
-  let comparisonBaseline = await readExistingPatchBaseline();
-  if (baselineEntry) {
+  const summarizedItems = crawledItems.length ? await summarizeWithAI(crawledItems) : [];
+  if (!summarizedItems.length && !existingItems.length) {
+    throw new Error(`기준일 ${sinceDate} 이후 게시물이 없습니다. 기존 데이터는 유지합니다.`);
+  }
+  let comparisonBaseline = existingGameData?.patchBaseline || null;
+  let baselineUpdated = false;
+  const baselineId = baselineEntry ? `${baselineEntry.board.key}-${baselineEntry.article.id}` : "";
+  const needsBaselineRefresh = Boolean(baselineEntry && (
+    !comparisonBaseline
+    || comparisonBaseline.id !== baselineId
+    || needsArticleRefresh(baselineEntry, comparisonBaseline)
+  ));
+  if (needsBaselineRefresh) {
     try {
       const [baselineArticle] = await mapWithConcurrency([baselineEntry], 1, crawlArticle);
       [comparisonBaseline] = await summarizeWithAI([baselineArticle]);
+      baselineUpdated = true;
     } catch (error) {
       console.warn(`직전 업데이트 분석을 생략하고 기존 비교 기준을 유지합니다: ${error.message}`);
     }
   }
-  const newsItems = summarizedItems.map(({ bodyText, comparisonOnly: _comparisonOnly, ...item }) => item);
+  if (!summarizedItems.length && !baselineUpdated) {
+    console.log("새 게시물이나 수정된 게시물이 없습니다. 기존 분석 데이터를 유지합니다.");
+    return;
+  }
+
+  const mergedItems = new Map(existingItems.map((item) => [item.id, item]));
+  for (const { bodyText: _bodyText, comparisonOnly: _comparisonOnly, ...item } of summarizedItems) mergedItems.set(item.id, item);
+  const newsItems = [...mergedItems.values()].sort((left, right) => new Date(right.postedAt || 0) - new Date(left.postedAt || 0));
   const latestPatch = newsItems.find((item) => item.sourceKey === "update" && /(?:업데이트|패치)\s*노트/.test(item.title));
   const patchBaseline = comparisonBaseline
     ? Object.fromEntries(Object.entries(comparisonBaseline).filter(([key]) => key !== "bodyText" && key !== "comparisonOnly"))

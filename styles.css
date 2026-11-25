@@ -76,9 +76,25 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .header-controls.in-game { margin-left: 0; }
 .theme-toggle:hover { border-color: var(--brand); color: var(--brand); }
 .theme-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
-.dashboard-link { min-height: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; transition: border-color 140ms ease, color 140ms ease, background 140ms ease; }
-.dashboard-link:hover, .dashboard-link.active { border-color: var(--brand); color: var(--brand); }
-.dashboard-link svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.my-page-wrap { position: relative; flex: 0 0 auto; }
+.my-page-toggle { min-height: 34px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; cursor: pointer; transition: border-color 140ms ease, color 140ms ease, background 140ms ease; }
+.my-page-toggle:hover, .my-page-toggle.active, .my-page-toggle[aria-expanded="true"] { border-color: var(--brand); color: var(--brand); }
+.my-page-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.my-page-menu { position: absolute; z-index: 50; top: calc(100% + 9px); right: 0; width: min(300px, calc(100vw - 28px)); padding: 8px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.my-page-menu[hidden] { display: none; }
+.my-page-menu-heading { padding: 8px 9px 10px; display: grid; gap: 2px; border-bottom: 1px solid var(--line); }
+.my-page-menu-heading .page-eyebrow { font-size: 9px; }
+.my-page-menu-heading strong { font-size: 15px; }
+.my-page-links { padding: 7px 0; display: grid; gap: 2px; }
+.my-page-links a, .my-page-links button { min-height: 38px; padding: 8px 10px; display: flex; align-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.my-page-links a:hover, .my-page-links button:hover { background: var(--surface-muted); color: var(--ink); }
+.my-page-links a.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+.my-page-account { min-height: 42px; padding: 7px 4px 2px; display: flex; align-items: center; justify-content: space-between; gap: 7px; border-top: 1px solid var(--line); }
+.my-page-account .community-account { max-width: 170px; min-width: 0; min-height: 30px; padding: 0 3px; overflow: hidden; border: 0; background: transparent; color: var(--muted); font-size: 11px; }
+.my-page-account .community-account::after { content: none; }
+.my-page-account .community-login-button { width: auto; min-height: 31px; padding: 0 9px; overflow: visible; font-size: 10px; }
+.my-page-account .community-logout-button { width: auto; min-height: 30px; padding: 0 5px; overflow: visible; font-size: 10px; }
+.my-page-account .community-logout-button::after { content: none; }
 .notification-wrap { position: relative; display: flex; align-items: center; flex: 0 0 auto; }
 .notification-toggle { position: relative; width: 34px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--muted); cursor: pointer; }
 .notification-toggle:hover, .notification-toggle[aria-expanded="true"] { border-color: var(--line); background: var(--surface-muted); color: var(--ink); }
@@ -453,9 +469,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 :root[data-theme="dark"] .dashboard-stat,
 :root[data-theme="dark"] .dashboard-game-item,
 :root[data-theme="dark"] .user-post-card { border-color: var(--line); background: var(--surface); }
-:root[data-theme="dark"] .dashboard-link { border-color: var(--line-strong); background: var(--surface); color: var(--muted); }
-:root[data-theme="dark"] .dashboard-link:hover,
-:root[data-theme="dark"] .dashboard-link.active { border-color: var(--brand); color: var(--brand); }
+:root[data-theme="dark"] .my-page-toggle { border-color: var(--line-strong); background: var(--surface); color: var(--muted); }
+:root[data-theme="dark"] .my-page-toggle:hover,
+:root[data-theme="dark"] .my-page-toggle.active,
+:root[data-theme="dark"] .my-page-toggle[aria-expanded="true"] { border-color: var(--brand); color: var(--brand); }
 :root[data-theme="dark"] .dashboard-empty,
 :root[data-theme="dark"] .post-composer { border-color: var(--line); background: var(--page); }
 :root[data-theme="dark"] .follow-context-menu [role="menuitem"]:hover,
@@ -615,8 +632,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .main-nav { gap: 7px; }
   .nav-link { font-size: 10px; }
   .theme-toggle { width: 34px; padding: 0; }
-  .theme-toggle span, .dashboard-link span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  .dashboard-link { width: 34px; padding: 0; }
+  .theme-toggle span, .my-page-toggle span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .my-page-toggle { width: 34px; padding: 0; }
   .community-account { min-width: 48px; padding-inline: 5px; font-size: 0; }
   .community-account::after { content: "계정"; font-size: 9px; }
   .community-login-button { width: 52px; padding: 0 4px; font-size: 0; }
@@ -640,8 +657,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .header-caption { display: none; }
   .theme-toggle { width: 32px; min-height: 32px; padding: 0; }
   .theme-toggle span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  .dashboard-link { width: 32px; min-height: 32px; padding: 0; }
-  .dashboard-link span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .my-page-toggle { width: 32px; min-height: 32px; padding: 0; }
   .notification-toggle { width: 32px; height: 32px; }
   .notification-popover { top: calc(100% + 10px); right: -44px; width: min(370px, calc(100vw - 24px)); }
   .main-nav { display: none; position: absolute; z-index: 10; top: 55px; left: 16px; right: 16px; margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
