@@ -849,6 +849,7 @@
 
   window.todaypatchCommunity = {
     init, bootstrap, loadRoute, renderPage, renderAccountControl, renderPreview, renderHomePreview, homeFeedCount, getPopularPosts, getMyPostsStats, renderMyPostsDashboard, renderNotificationItems, unreadNotificationCount, markAllNotificationsRead, refreshNotifications: loadNotifications,
+    getActiveGameId: () => state.post?.gameId || state.gameId || "aion2",
     hasRegisteredAccount: () => Boolean(state.user?.email),
     getPreferences: getPreferenceSnapshot, applyPreferences: (preferences) => context?.applyPreferences?.(preferences), schedulePreferenceSync,
     isAction, handleAction, handleInput, handleChange, ownsForm, handleSubmit,

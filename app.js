@@ -344,58 +344,146 @@ function renderNotificationControl() {
   </div>`;
 }
 
+function activePortalGame(kind = routeKind()) {
+  if (["home", "dashboard"].includes(kind)) return null;
+  const parts = routeParts();
+  if (kind.startsWith("community")) {
+    const queryGameId = new URLSearchParams(currentRoute().split("?")[1] || "").get("gameId");
+    if (queryGameId) return gameCatalog.find((entry) => entry.id === queryGameId) || game;
+    const postGameId = window.todaypatchCommunity?.getActiveGameId?.();
+    if (postGameId) return gameCatalog.find((entry) => entry.id === postGameId) || game;
+    return game;
+  }
+  if (parts[0] === "game" && parts[1]) {
+    return gameCatalog.find((entry) => entry.id === parts[1]) || null;
+  }
+  return game;
+}
+
+function renderGamePortalSidebar(portalGame, kind) {
+  if (!portalGame) return "";
+  const followed = isGameFollowed(portalGame.id);
+  const currentParts = routeParts();
+  const params = new URLSearchParams(currentRoute().split("?")[1] || "");
+  const isCommunityRoute = kind.startsWith("community");
+  const commType = isCommunityRoute ? (params.get("type") || "") : "";
+  const commSort = isCommunityRoute ? (params.get("sort") || "") : "";
+  const detailItem = kind === "detail" ? newsItems.find((item) => item.id === detailId()) : null;
+  const activeDetailRoute = { notice: "notices", update: "updates", "cm-story": "cm-stories" }[detailItem?.sourceKey];
+
+  const aionCountAll = newsItems.filter(isAionNewsItem).length;
+  const aionCountNotice = newsItems.filter((item) => isAionNewsItem(item) && item.sourceKey === "notice").length;
+  const aionCountUpdate = newsItems.filter((item) => isAionNewsItem(item) && item.sourceKey === "update").length;
+  const aionCountCm = newsItems.filter(isAionCmStory).length;
+
+  let officialLinks = [];
+  if (portalGame.id === "aion2") {
+    officialLinks = [
+      { label: "전체 소식", href: "#/aion2", count: aionCountAll, active: kind === "game-home" || kind === "news" },
+      { label: "공지", href: "#/aion2/notices", count: aionCountNotice, active: kind === "notices" || (kind === "detail" && activeDetailRoute === "notices") },
+      { label: "업데이트", href: "#/aion2/updates", count: aionCountUpdate, active: kind === "updates" || (kind === "detail" && activeDetailRoute === "updates") },
+      { label: "CM 아지트", href: "#/aion2/cm-stories", count: aionCountCm, active: kind === "cm-stories" || (kind === "detail" && activeDetailRoute === "cm-stories") },
+    ];
+  } else if (portalGame.id === "dokkaebi-world") {
+    const seg = currentParts[2] || "";
+    officialLinks = [
+      { label: "개요", href: "#/game/dokkaebi-world", active: kind === "dokkaebi-hub" && !seg },
+      { label: "전체 소식", href: "#/game/dokkaebi-world/news", count: dokkaebiNewsItems.length, active: (kind === "dokkaebi-hub" && seg === "news") || kind === "dokkaebi-detail" },
+      { label: "공지", href: "#/game/dokkaebi-world/notices", active: kind === "dokkaebi-hub" && seg === "notices" },
+      { label: "업데이트", href: "#/game/dokkaebi-world/updates", active: kind === "dokkaebi-hub" && seg === "updates" },
+      { label: "공략", href: "#/game/dokkaebi-world/guides", active: kind === "dokkaebi-hub" && seg === "guides" },
+    ];
+  } else {
+    officialLinks = [
+      { label: "게임 개요", href: portalGame.route, active: kind === "game-hub" },
+    ];
+  }
+
+  const gid = encodeURIComponent(portalGame.id);
+  const communityLinks = [
+    { label: "전체 게시판", href: `#/community?gameId=${gid}`, active: kind === "community" && !commType && commSort !== "popular" },
+    { label: "인기 게시글", href: `#/community?gameId=${gid}&sort=popular`, active: kind === "community" && !commType && commSort === "popular" },
+    { label: "자유게시판", href: `#/community?gameId=${gid}&type=free`, active: kind === "community" && commType === "free" },
+    { label: "정보 게시판", href: `#/community?gameId=${gid}&type=info`, active: kind === "community" && commType === "info" },
+    { label: "공략 게시판", href: `#/community?gameId=${gid}&type=guide`, active: kind === "community" && commType === "guide" },
+    { label: "질문 · 답변", href: `#/community?gameId=${gid}&type=question`, active: kind === "community" && commType === "question" },
+    { label: "밸런스 · 토론", href: `#/community?gameId=${gid}&type=discussion`, active: kind === "community" && commType === "discussion" },
+  ];
+
+  const toolLinks = portalGame.id === "aion2"
+    ? [
+      { label: "패치 후 할 일", href: "#/aion2/tasks", active: kind === "tasks" },
+      { label: "저장한 북마크", href: "#/aion2/bookmarks", active: kind === "bookmarks" },
+      { label: "내 대시보드", href: "#/dashboard", active: false },
+    ]
+    : [
+      { label: "내 대시보드", href: "#/dashboard", active: false },
+      { label: "게임 찾기", href: "#/", active: false },
+    ];
+
+  const statusText = portalGame.id === "aion2"
+    ? `최근 패치 ${gameData.lastPatchDate || ""}`
+    : portalGame.upcoming
+      ? `${releaseDateLabel(portalGame.releaseDate)} 출시 예정`
+      : "게임 허브";
+
+  const renderNavItem = (item) => `<a class="portal-nav-link ${item.active ? "active" : ""}" href="${item.href}" ${item.active ? 'aria-current="page"' : ""}><span>${escapeHTML(item.label)}</span>${typeof item.count === "number" ? `<em class="portal-nav-count">${item.count}</em>` : ""}</a>`;
+
+  return `
+    <aside class="portal-sidebar" id="portal-sidebar" aria-label="${escapeHTML(portalGame.name)} 플랫폼 메뉴">
+      <div class="portal-game-card">
+        <a class="portal-game-identity" href="${escapeHTML(portalGame.route)}">
+          <img src="${escapeHTML(portalGame.icon)}" alt="" />
+          <span>
+            <strong>${escapeHTML(portalGame.displayTitle || portalGame.name)}</strong>
+            <small>${escapeHTML(statusText)}</small>
+          </span>
+        </a>
+        <button class="game-follow-button portal-follow-btn ${followed ? "following" : ""}" type="button" data-action="${followed ? "toggle-follow" : "follow-game"}" data-game-id="${escapeHTML(portalGame.id)}" aria-pressed="${followed}">${followed ? "팔로우 중" : "+ 팔로우"}</button>
+      </div>
+      <nav class="portal-nav-group" aria-label="공식 소식">
+        <span class="portal-nav-heading">공식 소식</span>
+        ${officialLinks.map(renderNavItem).join("")}
+      </nav>
+      <nav class="portal-nav-group" aria-label="커뮤니티 게시판">
+        <div class="portal-nav-heading-row">
+          <span class="portal-nav-heading">커뮤니티</span>
+          <a class="portal-nav-write" href="#/community/new?gameId=${gid}">+ 글쓰기</a>
+        </div>
+        ${communityLinks.map(renderNavItem).join("")}
+      </nav>
+      <nav class="portal-nav-group" aria-label="편의 기능">
+        <span class="portal-nav-heading">정보 · 도구</span>
+        ${toolLinks.map(renderNavItem).join("")}
+      </nav>
+      <div class="portal-nav-group portal-game-switcher" aria-label="다른 게임으로 이동">
+        <span class="portal-nav-heading">다른 게임</span>
+        <div class="portal-switcher-list">
+          ${gameCatalog.map((entry) => `<a class="portal-switcher-item ${entry.id === portalGame.id ? "active" : ""}" href="${escapeHTML(entry.route)}"><img src="${escapeHTML(entry.icon)}" alt="" /><span>${escapeHTML(entry.name)}</span></a>`).join("")}
+        </div>
+      </div>
+    </aside>`;
+}
+
 function renderHeader() {
   const kind = routeKind();
-  const currentParts = routeParts();
-  const isCommunityRoute = kind.startsWith("community");
-  const communityGameId = new URLSearchParams(currentRoute().split("?")[1] || "").get("gameId");
-  const communityGame = gameCatalog.find((item) => item.id === communityGameId) || game;
-  const isDokkaebi = (currentParts[0] === "game" && currentParts[1] === "dokkaebi-world") || (isCommunityRoute && communityGameId === "dokkaebi-world");
-  const communityOnly = isCommunityRoute && !["aion2", "dokkaebi-world"].includes(communityGameId || "aion2");
-  const inGame = !["home", "dashboard", "game-hub"].includes(kind);
-  const selectedGame = isDokkaebi || kind === "game-hub" ? (isCommunityRoute ? communityGame : gameCatalog.find((item) => item.id === currentParts[1])) : null;
+  const portalGame = activePortalGame(kind);
+  const inGame = Boolean(portalGame);
   const isDark = document.documentElement.dataset.theme === "dark";
   const themeLabel = isDark ? "라이트 모드" : "다크 모드";
   const themeIcon = isDark
     ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>'
     : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.7 8.7 0 1 0 20.4 15.2Z"/></svg>';
-  const links = communityOnly ? [
-    ["게임 찾기", "#/", "game-list"],
-    ["커뮤니티", `#/community?gameId=${encodeURIComponent(communityGame.id)}`, "community"],
-  ] : isDokkaebi ? [
-    ["개요", "#/game/dokkaebi-world", "dokebi-home"],
-    ["전체 소식", "#/game/dokkaebi-world/news", "dokebi-news"],
-    ["공지", "#/game/dokkaebi-world/notices", "dokebi-notices"],
-    ["업데이트", "#/game/dokkaebi-world/updates", "dokebi-updates"],
-    ["공략", "#/game/dokkaebi-world/guides", "dokebi-guides"],
-    ["커뮤니티", "#/community?gameId=dokkaebi-world", "community"],
-  ] : [
-    ["전체 소식", "#/aion2", "game-home"],
-    ["공지", "#/aion2/notices", "notices"],
-    ["업데이트", "#/aion2/updates", "updates"],
-    ["CM 아지트", "#/aion2/cm-stories", "cm-stories"],
-    ["커뮤니티", "#/community?gameId=aion2", "community"],
-  ];
-  const detailItem = kind === "detail" ? newsItems.find((item) => item.id === detailId()) : null;
-  const activeDetailRoute = { notice: "notices", update: "updates", "cm-story": "cm-stories" }[detailItem?.sourceKey];
 
   return `
-    <header class="site-header">
+    <header class="site-header ${inGame ? "in-portal" : ""}">
       <div class="header-inner">
-        <a class="brand" href="#/" aria-label="오늘의 패치 게임 검색">
+        <a class="brand" href="#/" aria-label="오늘의 패치 메인으로 이동">
           <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
           <span>오늘의 패치</span>
         </a>
-        ${inGame ? `<a class="header-game" href="${isDokkaebi ? escapeHTML(selectedGame.route) : isCommunityRoute ? escapeHTML(communityGame.route || "#/community") : "#/aion2"}"><span class="header-divider" aria-hidden="true"></span>${isDokkaebi ? `<img class="header-game-icon" src="${escapeHTML(selectedGame.icon)}" alt="" />` : ""}${escapeHTML(isDokkaebi ? selectedGame.name : isCommunityRoute ? communityGame.name : game.name)}</a>
-          <button class="mobile-menu-button" data-action="mobile-menu" aria-label="게임 메뉴 열기" aria-expanded="false">☰</button>
-          <nav class="main-nav" id="main-nav" aria-label="${escapeHTML(isCommunityRoute ? communityGame.name : selectedGame?.name || game.name)} 메뉴">
-            ${links.map(([label, href, routeKey]) => {
-              const segment = currentParts[2] || "";
-              const dokkaebiActive = isDokkaebi && !isCommunityRoute && (routeKey === "dokebi-home" ? !segment : routeKey === "dokebi-news" ? segment === "news" || kind === "dokkaebi-detail" : routeKey === `dokebi-${segment}`);
-              const active = routeKey === "community" ? isCommunityRoute : isDokkaebi ? dokkaebiActive : kind === routeKey || (routeKey === "game-home" && kind === "news") || (kind === "detail" && routeKey === activeDetailRoute);
-              return `<a class="nav-link ${active ? "active" : ""}" href="${href}" ${active ? 'aria-current="page"' : ""}>${label}</a>`;
-            }).join("")}
-          </nav>` : selectedGame ? `<span class="header-caption">${escapeHTML(selectedGame.name)}</span>` : ""}
+        ${inGame ? `<a class="header-game" href="${escapeHTML(portalGame.route)}"><span class="header-divider" aria-hidden="true"></span><img class="header-game-icon" src="${escapeHTML(portalGame.icon)}" alt="" /><span>${escapeHTML(portalGame.displayTitle || portalGame.name)}</span></a>
+          <button class="mobile-menu-button" data-action="mobile-menu" aria-label="게임 메뉴 열기" aria-controls="portal-sidebar" aria-expanded="false">☰</button>` : ""}
         <div class="header-controls ${inGame ? "in-game" : ""}">
           <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
           ${renderNotificationControl()}
@@ -946,7 +1034,65 @@ function renderFeedIntro(title) {
 }
 
 function renderGameHome() {
-  return renderFeedPage("news");
+  const latestUpdate = newsItems.find((entry) => isAionNewsItem(entry) && entry.sourceKey === "update") || newsItems.find(isAionNewsItem);
+  const summaryLines = latestUpdate ? splitSentences(latestUpdate.summary || latestUpdate.excerpt).slice(0, 3) : [];
+  const updateSections = Array.isArray(latestUpdate?.sections) ? latestUpdate.sections : [];
+  const coupons = homeActiveCoupons(["aion2"]);
+  const deadlines = homeUpcomingDeadlines(["aion2"]);
+  const hotPosts = window.todaypatchCommunity?.getPopularPosts?.({ gameIds: ["aion2"], limit: 4 }) || [];
+  const typeLabel = { free: "자유", info: "정보", guide: "공략", question: "질문", discussion: "토론" };
+
+  return `
+    <main class="game-page portal-main-page listing-page">
+      ${renderFeedIntro("아이온2 전체 소식")}
+      <section class="portal-hero-grid" aria-label="아이온2 핵심 요약 및 커뮤니티 하이라이트">
+        <article class="portal-card portal-patch-card">
+          <div class="portal-card-head">
+            <div><span class="page-eyebrow">LATEST UPDATE</span><h2>최신 패치 브리핑</h2></div>
+            <span class="portal-card-meta">${escapeHTML(latestUpdate?.date || "")}</span>
+          </div>
+          ${latestUpdate ? `
+            <a class="portal-patch-title" href="#/aion2/news/${encodeURIComponent(latestUpdate.id)}" data-action="record-article-view" data-id="${escapeHTML(latestUpdate.id)}">${escapeHTML(latestUpdate.title)}</a>
+            <ul class="patch-brief-bullets">${summaryLines.map((line) => `<li>${escapeHTML(line)}</li>`).join("")}</ul>
+            ${updateSections.length ? `<div class="portal-section-chips">${updateSections.slice(0, 6).map((section, idx) => `<a href="#/aion2/news/${encodeURIComponent(latestUpdate.id)}?section=${idx}">${escapeHTML(section.heading)}</a>`).join("")}</div>` : ""}
+            <div class="patch-brief-footer">
+              <a href="#/aion2/news/${encodeURIComponent(latestUpdate.id)}">상세 AI 분석 보기 →</a>
+              <a class="patch-brief-tasks-link" href="#/aion2/tasks">패치 후 할 일 →</a>
+            </div>
+          ` : `<p class="portal-empty-copy">수집된 업데이트 노트가 없습니다.</p>`}
+        </article>
+        <div class="portal-hero-right">
+          <article class="portal-card portal-hot-card">
+            <div class="portal-card-head">
+              <div><span class="page-eyebrow">HOT COMMUNITY</span><h2>실시간 인기 게시글</h2></div>
+              <a href="#/community?gameId=aion2&sort=popular">전체 →</a>
+            </div>
+            ${hotPosts.length ? `<div class="portal-mini-list">${hotPosts.map((post) => `<a class="portal-mini-row" href="#/community/post/${encodeURIComponent(post.id)}"><span class="community-type-badge type-${escapeHTML(post.type)}">${escapeHTML(typeLabel[post.type] || "글")}</span><strong>${escapeHTML(post.title)}</strong><small>♡ ${post.likesCount || 0} · 💬 ${post.commentCount || 0}</small></a>`).join("")}</div>` : `<div class="portal-mini-empty"><p>아직 등록된 커뮤니티 인기글이 없습니다.</p><a class="secondary-button" href="#/community/new?gameId=aion2">첫 글 작성하기 →</a></div>`}
+          </article>
+          ${(coupons.length || deadlines.length) ? `
+            <article class="portal-card portal-coupon-card">
+              <div class="portal-card-head">
+                <div><span class="page-eyebrow">COUPON & SCHEDULE</span><h2>쿠폰 · 마감 일정</h2></div>
+                <a href="#/dashboard">캘린더 →</a>
+              </div>
+              ${coupons.map((coupon) => `<div class="home-coupon-strip"><span class="home-coupon-label">쿠폰</span><code>${escapeHTML(coupon.code)}</code><button type="button" class="coupon-copy-button" data-action="copy-coupon" data-code="${escapeHTML(coupon.code)}">복사</button><a class="home-coupon-link" href="#/aion2/news/${encodeURIComponent(coupon.newsId)}">안내 ↗</a></div>`).join("")}
+              ${deadlines.length ? `<div class="portal-deadline-chips">${deadlines.slice(0, 3).map((ev) => `<a class="bento-deadline-chip" href="#/aion2/news/${encodeURIComponent(ev.newsId)}"><span class="home-dday-badge${ev.daysUntil <= 3 ? " urgent" : ""}">${ev.daysUntil === 0 ? "D-Day" : `D-${ev.daysUntil}`}</span><span>${escapeHTML(ev.title)}</span></a>`).join("")}</div>` : ""}
+            </article>` : ""}
+        </div>
+      </section>
+      <section class="portal-board-strip" aria-label="아이온2 게시판 바로가기">
+        <a href="#/community?gameId=aion2&type=free"><strong>자유게시판</strong><span>자유로운 소통</span></a>
+        <a href="#/community?gameId=aion2&type=info"><strong>정보 게시판</strong><span>패치·아이템 정보</span></a>
+        <a href="#/community?gameId=aion2&type=guide"><strong>공략 게시판</strong><span>직업·던전 공략</span></a>
+        <a href="#/community?gameId=aion2&type=question"><strong>질문 · 답변</strong><span>궁금한 점 질문</span></a>
+        <a href="#/community?gameId=aion2&type=discussion"><strong>밸런스 · 토론</strong><span>패치·직업 토론</span></a>
+      </section>
+      <section class="content-section feed-section">
+        ${renderFilterBar("news")}
+        <div class="news-list" id="news-list"></div>
+        <div class="empty-state" id="empty-state" hidden><span aria-hidden="true">⌕</span><strong>게시물이 없어요.</strong><p>다른 단어를 입력하거나 다음 크롤링 후 다시 확인해 주세요.</p></div>
+      </section>
+    </main>`;
 }
 
 function renderCatalogGamePage() {
@@ -954,26 +1100,51 @@ function renderCatalogGamePage() {
   if (!item) return `<main class="page-width not-found"><h1>게임을 찾을 수 없어요.</h1><a class="primary-button" href="#/">게임 찾기로 돌아가기</a></main>`;
   if (item.id === "dokkaebi-world") return renderDokkaebiPage();
   const followed = isGameFollowed(item.id);
+  const countdown = item.upcoming && item.releaseDate ? renderUpcomingReleases([item.id]) : "";
+  const hotPosts = window.todaypatchCommunity?.renderHomePreview?.({ gameIds: [item.id], tab: "popular", limit: 6, writeGameId: item.id, showGameName: false }) || "";
   return `
-    <main class="page-width game-page game-hub-page">
-      <div class="breadcrumb"><a href="#/">게임 찾기</a><span aria-hidden="true">›</span><span>${escapeHTML(item.name)}</span></div>
-      <div class="page-heading"><div><span class="page-eyebrow">${item.upcoming ? "UPCOMING GAME" : "GAME HUB"}</span><h1>${escapeHTML(item.name)}</h1><p>${item.upcoming ? "출시를 기다리는 게임입니다. 팔로우하면 관심 게임 목록에서 모아볼 수 있어요." : "게임 소식을 모아볼 수 있도록 팔로우할 수 있습니다."}</p></div></div>
-      <section class="game-hub-card"><img src="${escapeHTML(item.icon)}" alt="" /><div><strong>${escapeHTML(item.name)}</strong><p>${item.upcoming ? "출시 예정" : "게임 소식 연동 준비 중"}</p></div><button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="${followed ? "toggle-follow" : "follow-game"}" data-game-id="${escapeHTML(item.id)}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button></section>
-      <div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>현재 공지·업데이트 크롤링은 아이온2에 연결되어 있습니다. 다른 게임의 소식 데이터는 준비 중입니다.</p></div>
+    <main class="game-page portal-main-page game-hub-page">
+      <div class="breadcrumb"><a href="#/">게임 찾기</a><span aria-hidden="true">›</span><span>${escapeHTML(item.displayTitle || item.name)}</span></div>
+      <div class="page-heading"><div><span class="page-eyebrow">${item.upcoming ? "UPCOMING GAME PORTAL" : "GAME PORTAL"}</span><h1>${escapeHTML(item.displayTitle || item.name)}</h1><p>${item.upcoming ? "출시 카운트다운과 유저 커뮤니티 소식을 한곳에서 확인하세요." : "게임 소식과 커뮤니티 게시판을 한곳에서 이용할 수 있습니다."}</p></div></div>
+      <div class="portal-hero-grid">
+        ${countdown || `<section class="portal-card"><div class="portal-card-head"><div><span class="page-eyebrow">GAME INFO</span><h2>${escapeHTML(item.name)}</h2></div></div><p class="portal-empty-copy">공식 공지·업데이트 크롤링 연동 준비 중입니다.</p></section>`}
+        <section class="portal-card">
+          <div class="portal-card-head"><div><span class="page-eyebrow">STATUS</span><h2>팔로우 · 안내</h2></div></div>
+          <div class="game-hub-card"><img src="${escapeHTML(item.icon)}" alt="" /><div><strong>${escapeHTML(item.displayTitle || item.name)}</strong><p>${item.upcoming ? `${escapeHTML(releaseDateLabel(item.releaseDate))} 출시 예정` : "게임 소식 연동 준비 중"}</p></div><button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="${followed ? "toggle-follow" : "follow-game"}" data-game-id="${escapeHTML(item.id)}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button></div>
+          <div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>공식 게시판 크롤링 연동 전에도 좌측 메뉴에서 자유·정보·공략 커뮤니티 게시판을 바로 이용할 수 있습니다.</p></div>
+        </section>
+      </div>
+      <section class="portal-board-strip" aria-label="${escapeHTML(item.name)} 게시판 바로가기">
+        <a href="#/community?gameId=${encodeURIComponent(item.id)}&type=free"><strong>자유게시판</strong><span>자유로운 소통</span></a>
+        <a href="#/community?gameId=${encodeURIComponent(item.id)}&type=info"><strong>정보 게시판</strong><span>출시·사전 정보</span></a>
+        <a href="#/community?gameId=${encodeURIComponent(item.id)}&type=guide"><strong>공략 게시판</strong><span>공략·가이드</span></a>
+        <a href="#/community?gameId=${encodeURIComponent(item.id)}&type=question"><strong>질문 · 답변</strong><span>궁금한 점 질문</span></a>
+        <a href="#/community?gameId=${encodeURIComponent(item.id)}&type=discussion"><strong>토론</strong><span>기대·의견 나눔</span></a>
+      </section>
+      <section class="portal-card portal-community-section">
+        <div class="portal-card-head"><div><span class="page-eyebrow">COMMUNITY</span><h2>${escapeHTML(item.name)} 인기 게시글</h2></div><div class="home-hub-actions"><a class="home-write-chip" href="#/community/new?gameId=${encodeURIComponent(item.id)}">+ 글쓰기</a><a href="#/community?gameId=${encodeURIComponent(item.id)}">전체 게시판 →</a></div></div>
+        ${hotPosts}
+      </section>
     </main>`;
 }
 
 function renderDokkaebiPage() {
   const item = gameCatalog.find((entry) => entry.id === "dokkaebi-world");
-  const followed = isGameFollowed(item.id);
   const category = state.dokkaebiFilter;
   const heading = category === "전체" ? "도깨비의 세계 소식" : `도깨비의 세계 ${category}`;
+  const communityPreview = window.todaypatchCommunity?.renderHomePreview?.({ gameIds: ["dokkaebi-world"], tab: "latest", limit: 4, writeGameId: "dokkaebi-world", showGameName: false }) || "";
   return `
-    <main class="page-width game-page listing-page dokkaebi-page">
+    <main class="game-page portal-main-page listing-page dokkaebi-page">
       <div class="breadcrumb"><a href="#/">게임 찾기</a><span aria-hidden="true">›</span><span>${escapeHTML(item.name)}</span>${category === "전체" ? "" : `<span aria-hidden="true">›</span><span>${escapeHTML(category)}</span>`}</div>
-      <div class="page-heading"><div><span class="page-eyebrow">DOKKAEBI WORLD GAME HUB</span><h1>${escapeHTML(heading)}</h1><p>도깨비의 세계 게임 정보와 소식을 검색하고 분류해 보세요.</p></div></div>
-      <section class="game-hub-card"><img src="${escapeHTML(item.icon)}" alt="" /><div><strong>${escapeHTML(item.name)}</strong><p>게임 소식과 공략을 검색할 수 있습니다.</p></div><button class="game-follow-button ${followed ? "following" : ""}" type="button" data-action="${followed ? "toggle-follow" : "follow-game"}" data-game-id="${escapeHTML(item.id)}" aria-pressed="${followed}">${followed ? "팔로우 해제" : "팔로우"}</button></section>
-      <div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>공식 데이터 연동 전입니다. 아래는 검색과 페이지 구성을 위한 예시 콘텐츠입니다.</p></div>
+      <div class="page-heading"><div><span class="page-eyebrow">DOKKAEBI WORLD PORTAL</span><h1>${escapeHTML(heading)}</h1><p>도깨비의 세계 게임 정보와 커뮤니티 게시판을 한곳에서 확인해 보세요.</p></div></div>
+      <section class="portal-board-strip" aria-label="도깨비의 세계 게시판 바로가기">
+        <a href="#/community?gameId=dokkaebi-world&type=free"><strong>자유게시판</strong><span>자유로운 소통</span></a>
+        <a href="#/community?gameId=dokkaebi-world&type=info"><strong>정보 게시판</strong><span>공개 정보 공유</span></a>
+        <a href="#/community?gameId=dokkaebi-world&type=guide"><strong>공략 게시판</strong><span>입문·플레이 공략</span></a>
+        <a href="#/community?gameId=dokkaebi-world&type=question"><strong>질문 · 답변</strong><span>궁금한 점 질문</span></a>
+        <a href="#/community?gameId=dokkaebi-world&type=discussion"><strong>토론</strong><span>기대·의견 나눔</span></a>
+      </section>
+      <div class="demo-note"><span class="demo-icon" aria-hidden="true">i</span><p>공식 소식 크롤링 연동 전이며, 아래 소식 목록은 구성 예시입니다. 커뮤니티 게시판은 실제로 글을 작성하고 소통할 수 있습니다.</p></div>
       <section class="content-section feed-section">
         <div class="feed-tools">
           <label class="search-field news-search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg><input id="dokkaebi-search" type="search" value="${escapeHTML(state.dokkaebiQuery)}" placeholder="도깨비의 세계 정보 검색" autocomplete="off" aria-label="도깨비의 세계 정보 검색" /></label>
@@ -982,6 +1153,10 @@ function renderDokkaebiPage() {
         <div class="section-heading list-heading"><div><h2>${escapeHTML(heading)}</h2><p>검색 결과 <span id="dokkaebi-count"></span></p></div></div>
         <div class="news-list" id="dokkaebi-news-list"></div>
         <div class="empty-state" id="dokkaebi-empty-state" hidden><span aria-hidden="true">⌕</span><strong>검색 결과가 없어요.</strong><p>다른 단어를 입력하거나 정보 유형을 바꿔 보세요.</p></div>
+      </section>
+      <section class="portal-card portal-community-section">
+        <div class="portal-card-head"><div><span class="page-eyebrow">COMMUNITY</span><h2>도깨비의 세계 최신 커뮤니티 글</h2></div><div class="home-hub-actions"><a class="home-write-chip" href="#/community/new?gameId=dokkaebi-world">+ 글쓰기</a><a href="#/community?gameId=dokkaebi-world">전체 게시판 →</a></div></div>
+        ${communityPreview}
       </section>
     </main>`;
 }
@@ -1017,11 +1192,14 @@ function categoryClass(category) {
 function renderNewsCard(item) {
   const bookmarked = isSaved(item.id);
   const read = isRead(item.id);
+  const excerpt = item.excerpt || splitSentences(item.summary)[0] || "";
+  const sectionCount = Array.isArray(item.sections) ? item.sections.length : 0;
   return `
     <article class="news-card ${read ? "is-read" : ""}">
       <a class="news-main" href="#/aion2/news/${encodeURIComponent(item.id)}" data-action="record-article-view" data-id="${escapeHTML(item.id)}" aria-label="${escapeHTML(item.title)} 상세 보기">
-        <div class="news-topline"><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><span class="news-source">${escapeHTML(displayNewsSource(item))} · ${escapeHTML(item.date)}</span>${read ? '<span class="read-badge">읽음</span>' : ""}</div>
+        <div class="news-topline"><span class="category-pill category-${categoryClass(displayNewsCategory(item))}">${escapeHTML(displayNewsCategory(item))}</span><span class="news-source">${escapeHTML(displayNewsSource(item))} · ${escapeHTML(item.date)}</span>${sectionCount ? `<span class="news-section-pill">분석 파트 ${sectionCount}</span>` : ""}${read ? '<span class="read-badge">읽음</span>' : ""}</div>
         <h3>${escapeHTML(item.title)}</h3>
+        ${excerpt ? `<p class="news-excerpt">${escapeHTML(excerpt)}</p>` : ""}
       </a>
       <a class="news-source-link" href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML(item.title)} 공식 본문 열기">본문 원문 <span aria-hidden="true">↗</span></a>
       <button class="bookmark-button ${bookmarked ? "saved" : ""}" data-action="bookmark" data-id="${item.id}" aria-label="${bookmarked ? "북마크 해제" : "북마크 저장"}" aria-pressed="${bookmarked}">
@@ -2108,8 +2286,12 @@ function render() {
   else if (kind === "detail") page = renderDetail(detailId());
   else if (kind.startsWith("community")) page = window.todaypatchCommunity?.renderPage(kind) || renderHome();
   else page = renderHome();
+  const portalGame = activePortalGame(kind);
+  const bodyContent = portalGame
+    ? `<div class="portal-shell">${renderGamePortalSidebar(portalGame, kind)}<div class="portal-content">${page}</div></div>`
+    : page;
   const chatbot = ["dokkaebi-hub", "dokkaebi-detail"].includes(kind) ? "" : renderChatbot();
-  app.innerHTML = `${renderHeader()}${page}${renderFooter()}${renderModal()}${chatbot}`;
+  app.innerHTML = `${renderHeader()}${bodyContent}${renderFooter()}${renderModal()}${chatbot}`;
   drawNewsList();
   drawDokkaebiNewsList();
   drawGameResults();
@@ -2436,9 +2618,11 @@ app.addEventListener("click", (event) => {
     }
   }
   if (action === "mobile-menu") {
-    const nav = app.querySelector("#main-nav");
-    const open = nav.classList.toggle("mobile-open");
-    button.setAttribute("aria-expanded", String(open));
+    const sidebar = app.querySelector("#portal-sidebar");
+    if (sidebar) {
+      const open = sidebar.classList.toggle("portal-sidebar-open");
+      button.setAttribute("aria-expanded", String(open));
+    }
   }
   if (action === "toggle-theme") {
     const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
