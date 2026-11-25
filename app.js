@@ -1131,7 +1131,11 @@ function renderPatchComparison(item) {
   const sections = Array.isArray(item.sections) ? item.sections : [];
   const sectionIndexByHeading = new Map(sections.map((section, index) => [normalizeChatText(section.heading), index]));
   const renderChanged = (section) => `<article class="patch-diff-item"><div><span>공통 파트 · 변경 후보</span><strong>${escapeHTML(section.heading)}</strong></div>${section.currentSummary ? `<p><b>이번 분석</b><br />${renderSentenceLines(section.currentSummary)}</p>` : ""}${section.newDetails.length ? `<ul>${section.newDetails.map((detail) => `<li>${highlightDetailText(detail)}</li>`).join("")}</ul>` : ""}${section.previousSummary && normalizeChatText(section.currentSummary) !== normalizeChatText(section.previousSummary) ? `<details><summary>이전 분석 보기</summary><p>${renderSentenceLines(section.previousSummary)}</p></details>` : ""}${section.previousDetails.length ? `<details><summary>이전 중요 항목 ${section.previousDetails.length}개 보기</summary><ul>${section.previousDetails.map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul></details>` : ""}</article>`;
-  const renderRemovedSection = (section) => `<article class="patch-diff-item patch-diff-removed"><div><span>이전 패치 전용</span><strong>${escapeHTML(section.heading)}</strong></div><p>${renderSentenceLines(section.summary || "")}</p>${section.importantDetails?.length ? `<ul>${section.importantDetails.slice(0, 4).map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul>${section.importantDetails.length > 4 ? `<details><summary>나머지 ${section.importantDetails.length - 4}개 항목 보기</summary><ul>${section.importantDetails.slice(4).map((detail) => `<li>${escapeHTML(detail)}</li>`).join("")}</ul></details>` : ""}` : ""}</article>`;
+  const renderRemovedSection = (section) => {
+    const details = Array.isArray(section.importantDetails) ? section.importantDetails : [];
+    const extraCount = Math.max(0, details.length - 4);
+    return `<article class="patch-diff-item patch-diff-removed"><div><span>이전 패치 전용</span><strong>${escapeHTML(section.heading)}</strong></div><p>${renderSentenceLines(section.summary || "")}</p>${details.length ? `<div class="expandable-list-wrap"><ul>${details.map((detail, idx) => `<li${idx >= 4 ? ' class="is-extra-item"' : ""}>${escapeHTML(detail)}</li>`).join("")}</ul>${extraCount ? `<button type="button" class="expand-list-button" data-action="toggle-more-list" data-more-label="나머지 ${extraCount}개 항목 더보기" data-less-label="항목 접기" aria-expanded="false">나머지 ${extraCount}개 항목 더보기 <span aria-hidden="true">▾</span></button>` : ""}</div>` : ""}</article>`;
+  };
   const changes = comparison.addedSections.length || comparison.changedSections.length || comparison.removedSections.length;
   const addedChips = comparison.addedSections.length ? `<section class="patch-diff-group"><h3>이번 업데이트에서 새로 추가된 파트</h3><p class="patch-diff-hint">중복을 줄이기 위해 제목만 표시합니다. 항목을 누르면 해당 파트 상세로 바로 이동합니다.</p><div class="patch-added-chips">${comparison.addedSections.map((section) => {
     const targetIdx = sectionIndexByHeading.get(normalizeChatText(section.heading));
@@ -1232,7 +1236,7 @@ function splitSentences(value) {
 function highlightDetailText(value) {
   return escapeHTML(value)
     .replace(/(상향|증가|추가|개선|확장|신규|초기화|재적용)/gu, '<mark class="detail-hl-up">$1</mark>')
-    .replace(/(하향|감소|제거|제한|불가|종료|만료|미지급)/gu, '<mark class="detail-hl-down">$1</mark>')
+    .replace(/(하향|감소|제거|제한|불가능|불가|종료|만료|미지급)/gu, '<mark class="detail-hl-down">$1</mark>')
     .replace(/(\d[\d,.]*(?:%|원|키나|칸|초|분|시|회|개|단계|중첩|월\s*\d{1,2}일))/gu, '<strong class="detail-hl-num">$1</strong>');
 }
 
@@ -1247,20 +1251,19 @@ function renderDetailEvents(events) {
     if (start) return `${start}${deadline ? ` · ${deadline}` : ""}`;
     return deadline || "일정 확인";
   };
-  const renderCard = (event) => `
-    <div class="detail-event-card">
+  const renderCard = (event, index) => `
+    <div class="detail-event-card${index >= 4 ? " is-extra-item" : ""}">
       <div class="detail-event-top"><span class="detail-event-type">${escapeHTML(typeLabel[event.type] || "일정")}</span><span class="detail-event-date">${escapeHTML(formatRange(event))}</span></div>
       <strong>${escapeHTML(event.title)}</strong>
       ${event.reward && event.reward !== "없음" ? `<p class="detail-event-meta"><b>보상</b> ${escapeHTML(event.reward)}</p>` : ""}
       ${Array.isArray(event.conditions) && event.conditions.length ? `<p class="detail-event-meta"><b>조건</b> ${escapeHTML(event.conditions.join(" · "))}</p>` : ""}
     </div>`;
-  const visible = events.slice(0, 4);
-  const hidden = events.slice(4);
+  const extraCount = Math.max(0, events.length - 4);
   return `
-    <div class="detail-events-wrap">
+    <div class="detail-events-wrap expandable-list-wrap">
       <div class="detail-events-head"><h3>핵심 일정 · 혜택</h3><span>${events.length}건</span></div>
-      <div class="detail-events-grid">${visible.map(renderCard).join("")}</div>
-      ${hidden.length ? `<details class="detail-more-box detail-events-more"><summary>나머지 일정 ${hidden.length}건 더보기</summary><div class="detail-events-grid">${hidden.map(renderCard).join("")}</div></details>` : ""}
+      <div class="detail-events-grid">${events.map(renderCard).join("")}</div>
+      ${extraCount ? `<button type="button" class="expand-list-button" data-action="toggle-more-list" data-more-label="나머지 일정 ${extraCount}건 더보기" data-less-label="일정 접기" aria-expanded="false">나머지 일정 ${extraCount}건 더보기 <span aria-hidden="true">▾</span></button>` : ""}
     </div>`;
 }
 
@@ -1286,14 +1289,12 @@ function renderDetail(id) {
   const sourceRoute = { notice: "notices", update: "updates", "cm-story": "cm-stories" }[item.sourceKey] || "news";
 
   const DETAIL_PREVIEW_LIMIT = 4;
-  const openCountDefault = sections.length <= 3 ? sections.length : 2;
   const sectionsHtml = sections.length
-    ? `<div class="detail-sections-toolbar"><p>관심 있는 파트만 펼쳐서 확인할 수 있습니다.</p><button type="button" class="text-toggle-button" data-action="toggle-all-sections" data-expanded="${sections.length <= 3 ? "true" : "false"}">${sections.length <= 3 ? "모두 접기" : "모두 펼치기"}</button></div>
+    ? `<div class="detail-sections-toolbar"><p>관심 있는 파트만 펼쳐서 확인할 수 있습니다.</p><button type="button" class="text-toggle-button" data-action="toggle-all-sections" data-expanded="false">모두 펼치기</button></div>
       <div class="analysis-sections">${sections.map((section, index) => {
         const details = Array.isArray(section.importantDetails) ? section.importantDetails : [];
-        const isOpen = index < openCountDefault || index === targetSectionIndex;
-        const previewDetails = details.slice(0, DETAIL_PREVIEW_LIMIT);
-        const extraDetails = details.slice(DETAIL_PREVIEW_LIMIT);
+        const isOpen = index === targetSectionIndex;
+        const extraCount = Math.max(0, details.length - DETAIL_PREVIEW_LIMIT);
         const sectionSummaryLines = splitSentences(section.summary);
         return `
           <details class="analysis-section-card" id="analysis-section-${index}" ${isOpen ? "open" : ""}>
@@ -1308,8 +1309,7 @@ function renderDetail(id) {
             </summary>
             <div class="analysis-section-body">
               ${sectionSummaryLines.length ? `<div class="section-summary-copy">${sectionSummaryLines.map((line) => `<p>${highlightDetailText(line)}</p>`).join("")}</div>` : ""}
-              ${previewDetails.length ? `<ul class="section-detail-list">${previewDetails.map((detail) => `<li>${highlightDetailText(detail)}</li>`).join("")}</ul>` : ""}
-              ${extraDetails.length ? `<details class="detail-more-box"><summary>나머지 ${extraDetails.length}개 세부 항목 더보기</summary><ul class="section-detail-list">${extraDetails.map((detail) => `<li>${highlightDetailText(detail)}</li>`).join("")}</ul></details>` : ""}
+              ${details.length ? `<div class="expandable-list-wrap"><ul class="section-detail-list">${details.map((detail, detailIndex) => `<li${detailIndex >= DETAIL_PREVIEW_LIMIT ? ' class="is-extra-item"' : ""}>${highlightDetailText(detail)}</li>`).join("")}</ul>${extraCount ? `<button type="button" class="expand-list-button" data-action="toggle-more-list" data-more-label="나머지 ${extraCount}개 세부 항목 더보기" data-less-label="세부 항목 접기" aria-expanded="false">나머지 ${extraCount}개 세부 항목 더보기 <span aria-hidden="true">▾</span></button>` : ""}</div>` : ""}
             </div>
           </details>`;
       }).join("")}</div>`
@@ -2046,6 +2046,14 @@ app.addEventListener("click", (event) => {
     cards.forEach((card) => { card.open = shouldExpand; });
     button.dataset.expanded = String(shouldExpand);
     button.textContent = shouldExpand ? "모두 접기" : "모두 펼치기";
+  }
+  if (action === "toggle-more-list") {
+    const wrap = button.closest(".expandable-list-wrap");
+    if (!wrap) return;
+    const expanded = wrap.classList.toggle("is-expanded");
+    button.setAttribute("aria-expanded", String(expanded));
+    const label = expanded ? (button.dataset.lessLabel || "접기") : (button.dataset.moreLabel || "더보기");
+    button.innerHTML = `${escapeHTML(label)} <span aria-hidden="true">${expanded ? "▴" : "▾"}</span>`;
   }
   if (action === "jump-to-section") {
     const idx = Number(button.dataset.sectionIndex);
