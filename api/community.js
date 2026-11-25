@@ -4,7 +4,7 @@ const { Pool } = require("pg");
 const { sanitizePreferences } = require("../user-preferences");
 
 const sessionCookie = "todaypatch_session";
-const categories = new Set(["free", "question", "guide", "discussion"]);
+const categories = new Set(["free", "info", "guide", "question", "discussion"]);
 const reportReasons = new Set(["spam", "abuse", "privacy", "copyright", "other"]);
 const scryptAsync = promisify(scrypt);
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.NEON_DATABASE_URL;
@@ -47,7 +47,7 @@ async function ensureSchema() {
       await pool.query(`CREATE TABLE IF NOT EXISTS community_posts (
         id uuid PRIMARY KEY,
         game_id varchar(80) NOT NULL,
-        type varchar(20) NOT NULL CHECK (type IN ('free', 'question', 'guide', 'discussion')),
+        type varchar(20) NOT NULL CHECK (type IN ('free', 'info', 'guide', 'question', 'discussion')),
         title varchar(100) NOT NULL,
         body varchar(5000) NOT NULL,
         tags text[] NOT NULL DEFAULT '{}',
@@ -58,14 +58,19 @@ async function ensureSchema() {
         hidden boolean NOT NULL DEFAULT false,
         deleted_at timestamptz
       )`);
+      await pool.query("ALTER TABLE community_posts DROP CONSTRAINT IF EXISTS community_posts_type_check");
+      await pool.query("ALTER TABLE community_posts ADD CONSTRAINT community_posts_type_check CHECK (type IN ('free', 'info', 'guide', 'question', 'discussion'))");
       await pool.query(`CREATE TABLE IF NOT EXISTS community_comments (
         id uuid PRIMARY KEY,
         post_id uuid NOT NULL REFERENCES community_posts(id),
+        parent_id uuid REFERENCES community_comments(id),
         author_id uuid NOT NULL REFERENCES community_accounts(id),
         body varchar(1000) NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now(),
         deleted_at timestamptz
       )`);
+      await pool.query("ALTER TABLE community_comments ADD COLUMN IF NOT EXISTS parent_id uuid REFERENCES community_comments(id)");
+      await pool.query("CREATE INDEX IF NOT EXISTS community_comments_parent_idx ON community_comments (parent_id) WHERE parent_id IS NOT NULL");
       await pool.query(`CREATE TABLE IF NOT EXISTS community_post_likes (
         post_id uuid NOT NULL REFERENCES community_posts(id),
         account_id uuid NOT NULL REFERENCES community_accounts(id),
@@ -342,16 +347,27 @@ async function findPost(id, accountId) {
 }
 
 async function loadComments(postId, account) {
-  const result = await pool.query(`SELECT c.id, c.body, c.created_at, c.author_id, a.display_name AS author_name
+  const result = await pool.query(`SELECT c.id, c.parent_id, c.body, c.created_at, c.deleted_at, c.author_id, a.display_name AS author_name
     FROM community_comments c LEFT JOIN community_accounts a ON a.id = c.author_id
-    WHERE c.post_id = $1 AND c.deleted_at IS NULL ORDER BY c.created_at ASC`, [postId]);
-  return result.rows.map((row) => ({
-    id: row.id,
-    body: row.body,
-    author: { id: row.author_id || "", displayName: row.author_name || "알 수 없는 게스트" },
-    createdAt: asIso(row.created_at),
-    mine: Boolean(account && account.id === row.author_id),
-  }));
+    WHERE c.post_id = $1 AND (
+      c.deleted_at IS NULL
+      OR EXISTS (SELECT 1 FROM community_comments r WHERE r.parent_id = c.id AND r.deleted_at IS NULL)
+    )
+    ORDER BY c.created_at ASC`, [postId]);
+  return result.rows.map((row) => {
+    const deleted = Boolean(row.deleted_at);
+    return {
+      id: row.id,
+      parentId: row.parent_id || null,
+      body: deleted ? "삭제된 댓글입니다." : row.body,
+      deleted,
+      author: deleted
+        ? { id: "", displayName: "삭제됨" }
+        : { id: row.author_id || "", displayName: row.author_name || "알 수 없는 게스트" },
+      createdAt: asIso(row.created_at),
+      mine: !deleted && Boolean(account && account.id === row.author_id),
+    };
+  });
 }
 
 async function rateLimited(sql, accountId) {
@@ -521,14 +537,20 @@ async function dispatch(req, res, route, account) {
     const gameId = url.searchParams.get("gameId") || "";
     const type = url.searchParams.get("type") || "";
     const query = (url.searchParams.get("q") || "").trim();
+    const mineOnly = url.searchParams.get("mine") === "1";
     const sort = url.searchParams.get("sort") === "popular" ? "popular" : "latest";
+    if (mineOnly && !account) {
+      json(res, 200, { posts: [] });
+      return;
+    }
     const result = await pool.query(`${postSelect("$1")}
-      WHERE p.deleted_at IS NULL AND p.hidden = false
+      WHERE p.deleted_at IS NULL AND (p.hidden = false OR ($5 = true AND p.author_id = $1))
+        AND ($5 = false OR p.author_id = $1)
         AND ($2 = '' OR p.game_id = $2)
         AND ($3 = '' OR p.type = $3)
-        AND ($4 = '' OR concat_ws(' ', p.title, p.body, array_to_string(p.tags, ' '), CASE p.type WHEN 'free' THEN '자유게시판' WHEN 'question' THEN '질문' WHEN 'guide' THEN '공략' WHEN 'discussion' THEN '토론' END) ILIKE '%' || $4 || '%')
+        AND ($4 = '' OR concat_ws(' ', p.title, p.body, array_to_string(p.tags, ' '), CASE p.type WHEN 'free' THEN '자유게시판' WHEN 'info' THEN '정보' WHEN 'guide' THEN '공략' WHEN 'question' THEN '질문' WHEN 'discussion' THEN '토론' END) ILIKE '%' || $4 || '%')
       ORDER BY ${sort === "popular" ? "(COALESCE(l.like_count, 0) + 2 * COALESCE(c.comment_count, 0)) DESC, p.created_at DESC" : "p.created_at DESC"}
-      LIMIT 300`, [account?.id || null, gameId, type, query]);
+      LIMIT 300`, [account?.id || null, gameId, type, query, mineOnly]);
     json(res, 200, { posts: result.rows.map((row) => publicPost(row, account)) });
     return;
   }
@@ -582,10 +604,13 @@ async function dispatch(req, res, route, account) {
   if (parts[0] === "posts" && parts[1] && parts[2] === "comments" && method === "POST") {
     if (!requireAccount(account, res)) return;
     const postId = parts[1];
-    const body = safeText((await readJson(req)).body, 1000);
+    const input = await readJson(req);
+    const body = safeText(input.body, 1000);
+    const rawParentId = safeText(input.parentId, 80);
     if (!body) return error(res, 400, "댓글 내용을 입력해 주세요.");
     const client = await pool.connect();
     let comment;
+    let resolvedParentId = null;
     try {
       await client.query("BEGIN");
       const postResult = await client.query("SELECT id, author_id, game_id, title, hidden, deleted_at FROM community_posts WHERE id=$1 FOR UPDATE", [postId]);
@@ -594,21 +619,44 @@ async function dispatch(req, res, route, account) {
         await client.query("ROLLBACK");
         return error(res, 404, "게시글을 찾을 수 없습니다.");
       }
+      let parentComment = null;
+      if (rawParentId) {
+        const parentResult = await client.query("SELECT id, post_id, parent_id, author_id, deleted_at FROM community_comments WHERE id=$1", [rawParentId]);
+        parentComment = parentResult.rows[0];
+        if (!parentComment || parentComment.post_id !== post.id || parentComment.deleted_at) {
+          await client.query("ROLLBACK");
+          return error(res, 404, "답글을 달 원본 댓글을 찾을 수 없습니다.");
+        }
+        resolvedParentId = parentComment.parent_id || parentComment.id;
+      }
       const limited = await client.query("SELECT count(*)::int AS count FROM community_comments WHERE author_id=$1 AND created_at > now() - interval '10 minutes'", [account.id]);
       if (Number(limited.rows[0].count) >= 20) {
         await client.query("ROLLBACK");
         return error(res, 429, "댓글 작성이 잠시 제한되었습니다. 10분 후 다시 작성해 주세요.");
       }
       const id = randomUUID();
-      const inserted = await client.query(`INSERT INTO community_comments (id, post_id, author_id, body)
-        VALUES ($1,$2,$3,$4) RETURNING id, body, created_at`, [id, postId, account.id, body]);
+      const inserted = await client.query(`INSERT INTO community_comments (id, post_id, parent_id, author_id, body)
+        VALUES ($1,$2,$3,$4,$5) RETURNING id, parent_id, body, created_at`, [id, postId, resolvedParentId, account.id, body]);
       comment = inserted.rows[0];
       if (post.author_id !== account.id) {
         await client.query(`INSERT INTO community_notifications (id, account_id, kind, post_id, game_id, title, body, actor_name)
-          VALUES ($1,$2,'comment',$3,$4,'내 게시글에 댓글이 달렸습니다.',$5,$6)`, [randomUUID(), post.author_id, post.id, post.game_id, body.slice(0, 180), account.display_name]);
+          VALUES ($1,$2,'comment',$3,$4,$5,$6,$7)`, [
+          randomUUID(), post.author_id, post.id, post.game_id,
+          resolvedParentId ? "내 게시글에 답글이 달렸습니다." : "내 게시글에 댓글이 달렸습니다.",
+          body.slice(0, 180), account.display_name,
+        ]);
         await client.query(`DELETE FROM community_notifications WHERE account_id=$1 AND id IN (
           SELECT id FROM community_notifications WHERE account_id=$1 ORDER BY created_at DESC OFFSET 5000
         )`, [post.author_id]);
+      }
+      if (parentComment && parentComment.author_id && parentComment.author_id !== account.id && parentComment.author_id !== post.author_id) {
+        await client.query(`INSERT INTO community_notifications (id, account_id, kind, post_id, game_id, title, body, actor_name)
+          VALUES ($1,$2,'comment',$3,$4,'내 댓글에 답글이 달렸습니다.',$5,$6)`, [
+          randomUUID(), parentComment.author_id, post.id, post.game_id, body.slice(0, 180), account.display_name,
+        ]);
+        await client.query(`DELETE FROM community_notifications WHERE account_id=$1 AND id IN (
+          SELECT id FROM community_notifications WHERE account_id=$1 ORDER BY created_at DESC OFFSET 5000
+        )`, [parentComment.author_id]);
       }
       await client.query("COMMIT");
     } catch (cause) {
@@ -616,7 +664,7 @@ async function dispatch(req, res, route, account) {
       throw cause;
     } finally { client.release(); }
     json(res, 201, { comment: {
-      id: comment.id, body: comment.body,
+      id: comment.id, parentId: comment.parent_id || null, body: comment.body,
       author: { id: account.id, displayName: account.display_name },
       createdAt: asIso(comment.created_at), mine: true,
     } });

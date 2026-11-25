@@ -1,15 +1,15 @@
 (() => {
-  const typeNames = { free: "자유게시판", question: "질문", guide: "공략", discussion: "토론" };
-  const typeOrder = ["free", "question", "guide", "discussion"];
+  const typeNames = { free: "자유게시판", info: "정보", guide: "공략", question: "질문", discussion: "토론" };
+  const typeOrder = ["free", "info", "guide", "question", "discussion"];
   const reportReasons = [
     ["spam", "광고·도배"], ["abuse", "욕설·괴롭힘"], ["privacy", "개인정보 노출"],
     ["copyright", "저작권 침해"], ["other", "기타"],
   ];
   const suggestedKeywords = ["기간", "보상", "직업", "스킬", "쿠폰", "이벤트", "시즌", "장비", "업데이트", "일정", "레이드"];
   const state = {
-    user: null, sessionLoaded: false, posts: [], post: null, reports: [], feedPosts: [], notifications: [],
+    user: null, sessionLoaded: false, posts: [], post: null, reports: [], feedPosts: [], myPosts: [], notifications: [],
     gameId: "aion2", type: "", sort: "latest", query: "", loading: false, error: "",
-    adminToken: "", editorPost: null, authMode: "login",
+    adminToken: "", editorPost: null, authMode: "login", replyToCommentId: null, replyToAuthor: "",
   };
   let context = null;
   let sequence = 0;
@@ -246,9 +246,68 @@
     return `<section class="community-official"><span class="page-eyebrow">OFFICIAL NOTICE</span><h2>연결된 공식 원문</h2><a href="${escapeHTML(official.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(official.title || item?.title || "공식 공지 원문 열기")} ↗</a>${linkedSections ? `<div class="community-analysis">${linkedSections}</div>` : item?.summary ? `<p>${escapeHTML(item.summary)}</p>` : ""}<a class="secondary-button" href="${escapeHTML(official.url)}" target="_blank" rel="noopener noreferrer">공식 원문으로 돌아가기</a></section>`;
   }
 
-  function renderComments(comments = []) {
+  function renderComments(comments = [], postId = "") {
     if (!comments.length) return `<div class="community-empty community-comment-empty"><p>첫 댓글을 남겨 보세요.</p></div>`;
-    return `<div class="community-comment-list">${comments.map((comment) => `<article class="community-comment"><div class="community-comment-meta"><strong>${escapeHTML(comment.author?.displayName || "게스트")}</strong><time>${escapeHTML(formatDate(comment.createdAt))}</time>${comment.mine ? `<button type="button" data-action="community-comment-delete" data-id="${escapeHTML(comment.id)}">삭제</button>` : ""}</div><p>${escapeHTML(comment.body)}</p></article>`).join("")}</div>`;
+    const roots = [];
+    const repliesByParent = new Map();
+    const byId = new Map(comments.map((comment) => [comment.id, comment]));
+    for (const comment of comments) {
+      if (comment.parentId && byId.has(comment.parentId)) {
+        const list = repliesByParent.get(comment.parentId) || [];
+        list.push(comment);
+        repliesByParent.set(comment.parentId, list);
+      } else {
+        roots.push(comment);
+      }
+    }
+
+    const renderReplyForm = (rootId) => {
+      if (!state.user || state.replyToCommentId !== rootId) return "";
+      const mention = state.replyToAuthor ? `@${state.replyToAuthor} ` : "";
+      return `<form class="community-reply-form" data-role="community-reply-form" data-post-id="${escapeHTML(postId)}" data-parent-id="${escapeHTML(rootId)}">
+        <div class="community-reply-form-head"><span>↳ ${escapeHTML(state.replyToAuthor || "댓글")}님에게 답글 작성</span><button type="button" data-action="community-reply-cancel">취소</button></div>
+        <div class="community-reply-form-row">
+          <label class="visually-hidden" for="community-reply-body-${escapeHTML(rootId)}">답글</label>
+          <textarea id="community-reply-body-${escapeHTML(rootId)}" name="body" rows="2" maxlength="1000" placeholder="답글을 입력하세요" required>${escapeHTML(mention)}</textarea>
+          <button class="primary-button" type="submit">답글 등록</button>
+        </div>
+      </form>`;
+    };
+
+    const renderReplyItem = (reply, rootId) => `
+      <article class="community-comment community-reply-item">
+        <span class="community-reply-arrow" aria-hidden="true">↳</span>
+        <div class="community-reply-content">
+          <div class="community-comment-meta">
+            <strong>${escapeHTML(reply.author?.displayName || "게스트")}</strong>
+            <time>${escapeHTML(formatDate(reply.createdAt))}</time>
+            <div class="community-comment-actions">
+              ${state.user ? `<button type="button" data-action="community-reply-open" data-id="${escapeHTML(rootId)}" data-author="${escapeHTML(reply.author?.displayName || "게스트")}">답글</button>` : ""}
+              ${reply.mine ? `<button type="button" data-action="community-comment-delete" data-id="${escapeHTML(reply.id)}">삭제</button>` : ""}
+            </div>
+          </div>
+          <p>${escapeHTML(reply.body)}</p>
+        </div>
+      </article>`;
+
+    return `<div class="community-comment-list">${roots.map((comment) => {
+      const replies = repliesByParent.get(comment.id) || [];
+      return `<div class="community-comment-thread">
+        <article class="community-comment ${comment.deleted ? "is-deleted" : ""}">
+          <div class="community-comment-meta">
+            <strong>${escapeHTML(comment.author?.displayName || "게스트")}</strong>
+            <time>${escapeHTML(formatDate(comment.createdAt))}</time>
+            <div class="community-comment-actions">
+              ${!comment.deleted && state.user ? `<button type="button" data-action="community-reply-open" data-id="${escapeHTML(comment.id)}" data-author="${escapeHTML(comment.author?.displayName || "게스트")}">답글${replies.length ? ` ${replies.length}` : ""}</button>` : ""}
+              ${comment.mine ? `<button type="button" data-action="community-comment-delete" data-id="${escapeHTML(comment.id)}">삭제</button>` : ""}
+            </div>
+          </div>
+          <p>${escapeHTML(comment.body)}</p>
+        </article>
+        ${replies.length ? `<div class="community-replies">${replies.map((reply) => renderReplyItem(reply, comment.id)).join("")}</div>` : ""}
+        ${renderReplyForm(comment.id)}
+      </div>`;
+    }).join("")}</div>`;
   }
 
   function renderCommunityDetail() {
@@ -260,7 +319,7 @@
       <div class="community-detail-layout"><article class="community-detail-main"><div class="community-detail-title"><div class="community-post-meta"><span class="community-type-badge type-${escapeHTML(post.type)}">${escapeHTML(typeNames[post.type] || "게시글")}</span><span>${escapeHTML(gameName(post.gameId))}</span></div><h1>${escapeHTML(post.title)}</h1><div class="community-post-meta"><span>${escapeHTML(post.author?.displayName || "게스트")}</span><time>${escapeHTML(formatDate(post.updatedAt || post.createdAt))}${post.updatedAt ? " · 수정됨" : ""}</time></div></div>
         <div class="community-detail-body">${escapeHTML(post.body)}</div>${post.tags?.length ? `<div class="community-tags">${post.tags.map((tag) => `<span>#${escapeHTML(tag)}</span>`).join("")}</div>` : ""}
         <div class="community-detail-actions"><button class="secondary-button ${post.liked ? "is-liked" : ""}" type="button" data-action="community-like" data-id="${escapeHTML(post.id)}">${post.liked ? "♥ 좋아요" : "♡ 좋아요"} ${post.likesCount || 0}</button><button class="secondary-button" type="button" data-action="community-report" data-id="${escapeHTML(post.id)}">신고</button>${post.mine ? `<a class="secondary-button" href="#/community/new?gameId=${encodeURIComponent(post.gameId)}&edit=${encodeURIComponent(post.id)}">수정</a><button class="secondary-button" type="button" data-action="community-delete" data-id="${escapeHTML(post.id)}">삭제</button>` : ""}</div>
-        <section class="community-comments"><div class="community-list-heading"><h2>댓글 <span>${post.commentCount || 0}</span></h2></div>${state.user ? `<form id="community-comment-form" data-post-id="${escapeHTML(post.id)}" class="community-comment-form"><label class="visually-hidden" for="community-comment-body">댓글</label><textarea id="community-comment-body" name="body" rows="3" maxlength="1000" placeholder="댓글을 입력하세요" required></textarea><button class="primary-button" type="submit">댓글 등록</button></form>` : `<div class="community-login-note"><p>댓글을 쓰려면 로그인하세요.</p><button class="primary-button" data-action="community-login">로그인</button></div>`}${renderComments(post.comments || [])}</section>
+        <section class="community-comments"><div class="community-list-heading"><h2>댓글 <span>${post.commentCount || 0}</span></h2></div>${state.user ? `<form id="community-comment-form" data-post-id="${escapeHTML(post.id)}" class="community-comment-form"><label class="visually-hidden" for="community-comment-body">댓글</label><textarea id="community-comment-body" name="body" rows="3" maxlength="1000" placeholder="댓글을 입력하세요" required></textarea><button class="primary-button" type="submit">댓글 등록</button></form>` : `<div class="community-login-note"><p>댓글을 쓰려면 로그인하세요.</p><button class="primary-button" data-action="community-login">로그인</button></div>`}${renderComments(post.comments || [], post.id)}</section>
       </article><aside class="community-detail-side">${official || `<section class="community-official community-no-source"><span class="page-eyebrow">COMMUNITY</span><h2>자유로운 이야기</h2><p>공식 공지에 연결된 게시글은 원문 링크와 선택한 분석 항목을 함께 표시합니다.</p></section>`}</aside></div>
     </main>`;
   }
@@ -377,6 +436,81 @@
     return state.feedPosts.filter((post) => allowed.size && allowed.has(post.gameId)).length;
   }
 
+  function getPopularPosts({ gameIds = [], type = "", limit = 6 } = {}) {
+    const allowed = new Set((gameIds || []).filter(Boolean));
+    return state.feedPosts
+      .filter((post) => (!allowed.size || allowed.has(post.gameId)) && (!type || post.type === type))
+      .sort((left, right) => ((right.likesCount || 0) * 2 + (right.commentCount || 0) * 3) - ((left.likesCount || 0) * 2 + (left.commentCount || 0) * 3)
+        || String(right.createdAt || "").localeCompare(String(left.createdAt || "")))
+      .slice(0, limit);
+  }
+
+  function getMyPosts() {
+    if (!state.user) return [];
+    if (state.myPosts.length) return state.myPosts;
+    return state.feedPosts.filter((post) => post.mine || post.author?.id === state.user.id);
+  }
+
+  function getMyPostsStats() {
+    const posts = getMyPosts();
+    return {
+      count: posts.length,
+      totalLikes: posts.reduce((sum, post) => sum + (post.likesCount || 0), 0),
+      totalComments: posts.reduce((sum, post) => sum + (post.commentCount || 0), 0),
+    };
+  }
+
+  function renderMyPostsDashboard(defaultGameId = "aion2") {
+    if (!state.user) {
+      return `<div class="dashboard-empty">
+        <p>로그인하면 내가 커뮤니티에 작성한 공개 게시글을 한눈에 관리할 수 있어요.</p>
+        <button class="primary-button" type="button" data-action="community-login">로그인하고 내 글 보기</button>
+      </div>`;
+    }
+    const posts = getMyPosts();
+    if (!posts.length) {
+      return `<div class="dashboard-empty">
+        <p>아직 커뮤니티에 작성한 게시글이 없습니다.</p>
+        <a class="primary-button" href="#/community/new?gameId=${encodeURIComponent(defaultGameId)}">첫 게시글 작성하기 →</a>
+      </div>`;
+    }
+    return `<div class="dashboard-my-posts-grid">${posts.map((post) => {
+      const excerpt = String(post.body || "").replace(/\s+/g, " ").trim().slice(0, 110);
+      return `<article class="dashboard-my-post-card">
+        <div class="dashboard-my-post-top">
+          <span class="dashboard-game-chip">${escapeHTML(gameName(post.gameId))}</span>
+          <span class="community-type-badge type-${escapeHTML(post.type)}">${escapeHTML(typeNames[post.type] || "게시글")}</span>
+          ${post.official ? `<span class="home-feed-linked">공지 연결</span>` : ""}
+          <time>${escapeHTML(formatDate(post.updatedAt || post.createdAt))}</time>
+        </div>
+        <a class="dashboard-my-post-body" href="${escapeHTML(linkToPost(post))}">
+          <strong>${escapeHTML(post.title)}</strong>
+          ${excerpt ? `<p>${escapeHTML(excerpt)}</p>` : ""}
+        </a>
+        <div class="dashboard-my-post-foot">
+          <span class="home-community-stats"><span>♡ ${post.likesCount || 0}</span><span>댓글 ${post.commentCount || 0}</span></span>
+          <div class="dashboard-my-post-actions">
+            <a href="${escapeHTML(linkToPost(post))}">보기</a>
+            <a href="#/community/new?gameId=${encodeURIComponent(post.gameId)}&edit=${encodeURIComponent(post.id)}">수정</a>
+          </div>
+        </div>
+      </article>`;
+    }).join("")}</div>`;
+  }
+
+  async function loadMyPosts() {
+    if (!state.user) {
+      state.myPosts = [];
+      return;
+    }
+    try {
+      const result = await api("/api/community/posts?mine=1&sort=latest");
+      state.myPosts = result.posts || [];
+    } catch {
+      state.myPosts = [];
+    }
+  }
+
   async function loadSession() {
     try {
       const result = await api("/api/community/session");
@@ -435,6 +569,10 @@
       }
     } else if (kind === "community-detail") {
       const postId = context.getRouteParts()[2];
+      if (state.post?.id !== postId) {
+        state.replyToCommentId = null;
+        state.replyToAuthor = "";
+      }
       try {
         const result = await api(`/api/community/posts/${encodeURIComponent(postId)}`);
         if (requestId !== sequence) return;
@@ -483,7 +621,7 @@
   async function bootstrap() {
     await Promise.all([loadSession(), loadFeed()]);
     await syncPreferencesForCurrentUser();
-    await loadNotifications();
+    await Promise.all([loadNotifications(), loadMyPosts()]);
     if (context?.isCommunityRoute?.()) await loadRoute();
     else context?.render();
   }
@@ -505,9 +643,31 @@
         await api("/api/community/logout", { method: "POST", body: {} });
         state.user = null;
         state.notifications = [];
+        state.myPosts = [];
+        state.replyToCommentId = null;
+        state.replyToAuthor = "";
         context.render();
         if (context.isCommunityRoute?.()) await loadRoute();
         context.showToast?.("로그아웃했습니다.");
+      } else if (action === "community-reply-open") {
+        if (!state.user) {
+          context.showToast?.("답글을 작성하려면 로그인해 주세요.");
+          return;
+        }
+        state.replyToCommentId = id || null;
+        state.replyToAuthor = button.dataset.author || "";
+        context.render();
+        window.requestAnimationFrame(() => {
+          const textarea = document.querySelector(`#community-reply-body-${CSS.escape(id || "")}`);
+          if (textarea) {
+            textarea.focus();
+            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+          }
+        });
+      } else if (action === "community-reply-cancel") {
+        state.replyToCommentId = null;
+        state.replyToAuthor = "";
+        context.render();
       } else if (action === "community-type") {
         state.type = button.dataset.type || "";
         updateRouteFilters();
@@ -550,6 +710,8 @@
       } else if (action === "community-delete") {
         if (!window.confirm("이 게시글을 삭제할까요?")) return;
         await api(`/api/community/posts/${encodeURIComponent(id)}`, { method: "DELETE" });
+        state.feedPosts = state.feedPosts.filter((item) => item.id !== id);
+        state.myPosts = state.myPosts.filter((item) => item.id !== id);
         context.showToast?.("게시글을 삭제했습니다.");
         window.location.hash = `#/community?gameId=${encodeURIComponent(state.post?.gameId || state.gameId)}`;
       } else if (action === "community-comment-delete") {
@@ -600,7 +762,8 @@
   }
 
   function ownsForm(form) {
-    return ["community-auth-form", "community-editor-form", "community-comment-form", "community-report-form"].includes(form.id);
+    return ["community-auth-form", "community-editor-form", "community-comment-form", "community-report-form"].includes(form.id)
+      || form.dataset?.role === "community-reply-form";
   }
 
   async function handleSubmit(form) {
@@ -622,7 +785,7 @@
         state.error = "";
         document.querySelector("#app-dialog")?.close();
         await syncPreferencesForCurrentUser();
-        await loadNotifications();
+        await Promise.all([loadNotifications(), loadMyPosts()]);
         context.render();
         context.showToast?.(mode === "register" ? "계정을 만들고 로그인했습니다." : "로그인했습니다.");
         if (context.isCommunityRoute?.()) await loadRoute();
@@ -655,17 +818,23 @@
           method: editId ? "PUT" : "POST", body: payload,
         });
         state.feedPosts = [result.post, ...state.feedPosts.filter((item) => item.id !== result.post.id)].slice(0, 300);
+        state.myPosts = [result.post, ...state.myPosts.filter((item) => item.id !== result.post.id)].slice(0, 300);
         context.showToast?.(editId ? "게시글을 수정했습니다." : "게시글을 공개했습니다.");
         window.location.hash = linkToPost(result.post).slice(1);
-      } else if (form.id === "community-comment-form") {
+      } else if (form.id === "community-comment-form" || form.dataset?.role === "community-reply-form") {
         if (!state.user) {
           context.showToast?.("댓글을 작성하려면 로그인해 주세요.");
           return;
         }
-        await api(`/api/community/posts/${encodeURIComponent(form.dataset.postId)}/comments`, { method: "POST", body: { body: String(data.get("body") || "").trim() } });
-        await loadNotifications();
+        const parentId = form.dataset.parentId || "";
+        const payload = { body: String(data.get("body") || "").trim() };
+        if (parentId) payload.parentId = parentId;
+        await api(`/api/community/posts/${encodeURIComponent(form.dataset.postId)}/comments`, { method: "POST", body: payload });
+        state.replyToCommentId = null;
+        state.replyToAuthor = "";
+        await Promise.all([loadNotifications(), loadFeed()]);
         await loadRoute();
-        context.showToast?.("댓글을 등록했습니다.");
+        context.showToast?.(parentId ? "답글을 등록했습니다." : "댓글을 등록했습니다.");
       } else if (form.id === "community-report-form") {
         await api(`/api/community/posts/${encodeURIComponent(form.dataset.postId)}/reports`, {
           method: "POST", body: { reason: String(data.get("reason") || "other"), detail: String(data.get("detail") || "").trim() },
@@ -679,7 +848,7 @@
   }
 
   window.todaypatchCommunity = {
-    init, bootstrap, loadRoute, renderPage, renderAccountControl, renderPreview, renderHomePreview, homeFeedCount, renderNotificationItems, unreadNotificationCount, markAllNotificationsRead, refreshNotifications: loadNotifications,
+    init, bootstrap, loadRoute, renderPage, renderAccountControl, renderPreview, renderHomePreview, homeFeedCount, getPopularPosts, getMyPostsStats, renderMyPostsDashboard, renderNotificationItems, unreadNotificationCount, markAllNotificationsRead, refreshNotifications: loadNotifications,
     hasRegisteredAccount: () => Boolean(state.user?.email),
     getPreferences: getPreferenceSnapshot, applyPreferences: (preferences) => context?.applyPreferences?.(preferences), schedulePreferenceSync,
     isAction, handleAction, handleInput, handleChange, ownsForm, handleSubmit,

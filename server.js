@@ -12,8 +12,8 @@ const privateDir = path.join(root, ".private");
 const storePath = path.join(privateDir, "community.json");
 const sessionCookie = "todaypatch_session";
 const scryptAsync = promisify(scrypt);
-const categoryIds = new Set(["free", "question", "guide", "discussion"]);
-const categoryNames = { free: "자유게시판", question: "질문", guide: "공략", discussion: "토론" };
+const categoryIds = new Set(["free", "info", "guide", "question", "discussion"]);
+const categoryNames = { free: "자유게시판", info: "정보", guide: "공략", question: "질문", discussion: "토론" };
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -225,11 +225,11 @@ function commentCount(postId) {
   return communityStore.comments.filter((comment) => comment.postId === postId && !comment.deletedAt).length;
 }
 
-function addCommunityNotification(accountId, kind, post, actor, body = "") {
+function addCommunityNotification(accountId, kind, post, actor, body = "", customTitle = "") {
   if (!accountId || accountId === actor.id) return;
   communityStore.notifications.unshift({
     id: randomUUID(), accountId, kind, postId: post.id, gameId: post.gameId,
-    title: kind === "comment" ? "내 게시글에 댓글이 달렸습니다." : "내 게시글에 좋아요가 달렸습니다.",
+    title: customTitle || (kind === "comment" ? "내 게시글에 댓글이 달렸습니다." : "내 게시글에 좋아요가 달렸습니다."),
     body: body.slice(0, 180), actorName: actor.displayName, createdAt: new Date().toISOString(), readAt: null,
   });
   communityStore.notifications = communityStore.notifications.slice(0, 5000);
@@ -253,16 +253,26 @@ function publicPost(post, account, includeComments = false) {
     mine: Boolean(account && account.id === post.authorId),
   };
   if (includeComments) {
+    const activeReplyParentIds = new Set(
+      communityStore.comments
+        .filter((comment) => comment.postId === post.id && !comment.deletedAt && comment.parentId)
+        .map((comment) => comment.parentId),
+    );
     result.comments = communityStore.comments
-      .filter((comment) => comment.postId === post.id && !comment.deletedAt)
+      .filter((comment) => comment.postId === post.id && (!comment.deletedAt || activeReplyParentIds.has(comment.id)))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .map((comment) => ({
-        id: comment.id,
-        body: comment.body,
-        author: authorFor(comment.authorId),
-        createdAt: comment.createdAt,
-        mine: Boolean(account && account.id === comment.authorId),
-      }));
+      .map((comment) => {
+        const deleted = Boolean(comment.deletedAt);
+        return {
+          id: comment.id,
+          parentId: comment.parentId || null,
+          body: deleted ? "삭제된 댓글입니다." : comment.body,
+          deleted,
+          author: deleted ? { id: "", displayName: "삭제됨" } : authorFor(comment.authorId),
+          createdAt: comment.createdAt,
+          mine: !deleted && Boolean(account && account.id === comment.authorId),
+        };
+      });
   }
   return result;
 }
@@ -484,8 +494,15 @@ async function handleApi(request, response, requestUrl) {
     const gameId = requestUrl.searchParams.get("gameId") || "";
     const type = requestUrl.searchParams.get("type") || "";
     const query = (requestUrl.searchParams.get("q") || "").trim().toLocaleLowerCase("ko-KR");
+    const mineOnly = requestUrl.searchParams.get("mine") === "1";
     const sort = requestUrl.searchParams.get("sort") === "popular" ? "popular" : "latest";
-    const posts = communityStore.posts.filter((post) => !post.deletedAt && !post.hidden
+    if (mineOnly && !account) {
+      sendJson(response, 200, { posts: [] });
+      return;
+    }
+    const posts = communityStore.posts.filter((post) => !post.deletedAt
+      && (!post.hidden || (mineOnly && post.authorId === account?.id))
+      && (!mineOnly || post.authorId === account?.id)
       && (!gameId || post.gameId === gameId)
       && (!type || post.type === type)
       && (!query || `${post.title} ${post.body} ${(post.tags || []).join(" ")} ${categoryNames[post.type] || ""}`.toLocaleLowerCase("ko-KR").includes(query)));
@@ -573,15 +590,29 @@ async function handleApi(request, response, requestUrl) {
     }
     const input = await readJson(request);
     const body = safeText(input.body, 1000);
+    const rawParentId = safeText(input.parentId, 80);
     if (!body) {
       sendError(response, 400, "댓글 내용을 입력해 주세요.");
       return;
     }
-    const comment = { id: randomUUID(), postId: post.id, authorId: author.id, body, createdAt: new Date().toISOString() };
+    let parentComment = null;
+    let resolvedParentId = null;
+    if (rawParentId) {
+      parentComment = communityStore.comments.find((item) => item.id === rawParentId && item.postId === post.id && !item.deletedAt);
+      if (!parentComment) {
+        sendError(response, 404, "답글을 달 원본 댓글을 찾을 수 없습니다.");
+        return;
+      }
+      resolvedParentId = parentComment.parentId || parentComment.id;
+    }
+    const comment = { id: randomUUID(), postId: post.id, parentId: resolvedParentId, authorId: author.id, body, createdAt: new Date().toISOString() };
     communityStore.comments.push(comment);
-    addCommunityNotification(post.authorId, "comment", post, author, body);
+    addCommunityNotification(post.authorId, "comment", post, author, body, resolvedParentId ? "내 게시글에 답글이 달렸습니다." : "내 게시글에 댓글이 달렸습니다.");
+    if (parentComment && parentComment.authorId !== post.authorId) {
+      addCommunityNotification(parentComment.authorId, "comment", post, author, body, "내 댓글에 답글이 달렸습니다.");
+    }
     await persistCommunityStore();
-    sendJson(response, 201, { comment: { id: comment.id, body, author: { id: author.id, displayName: author.displayName }, createdAt: comment.createdAt, mine: true } });
+    sendJson(response, 201, { comment: { id: comment.id, parentId: resolvedParentId, body, author: { id: author.id, displayName: author.displayName }, createdAt: comment.createdAt, mine: true } });
     return;
   }
 

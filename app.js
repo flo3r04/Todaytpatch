@@ -600,11 +600,21 @@ function renderHomeFeedHub(followedIds, allowedGameIds, showGameName) {
   const newsPool = homeOfficialNewsPool(allowedGameIds);
   const guides = homeGuideEntries(allowedGameIds);
   const communityCount = window.todaypatchCommunity?.homeFeedCount?.(allowedGameIds) || 0;
-  const activeTab = ["news", "community", "guides"].includes(state.homeFeedTab) ? state.homeFeedTab : "news";
+  const popularCommunityPosts = window.todaypatchCommunity?.getPopularPosts?.({ gameIds: allowedGameIds, limit: 6 }) || [];
+  const popularGuidePosts = window.todaypatchCommunity?.getPopularPosts?.({ gameIds: allowedGameIds, type: "guide", limit: 6 }) || [];
+  const activeTab = ["news", "popular", "guides", "community"].includes(state.homeFeedTab) ? state.homeFeedTab : "news";
   const writeGameId = allowedGameIds[0] || "aion2";
   const moreNewsHref = allowedGameIds.length === 1 && allowedGameIds[0] !== game.id
     ? homeGameMeta(allowedGameIds[0]).route
     : "#/aion2/news";
+  const popularBoardHref = `#/community?gameId=${encodeURIComponent(writeGameId)}&sort=popular`;
+  const guideBoardHref = `#/community?gameId=${encodeURIComponent(writeGameId)}&type=guide&sort=popular`;
+  const boardQuickLinks = `
+    <div class="home-board-shortcuts" aria-label="게시판 바로가기">
+      <a href="#/community?gameId=${encodeURIComponent(writeGameId)}&type=free">자유</a>
+      <a href="#/community?gameId=${encodeURIComponent(writeGameId)}&type=info">정보</a>
+      <a href="#/community?gameId=${encodeURIComponent(writeGameId)}&type=guide">공략</a>
+    </div>`;
 
   const gameFilterHtml = followedIds.length > 1
     ? `<div class="home-hub-game-filters" role="group" aria-label="팔로우 게임 필터">
@@ -616,12 +626,32 @@ function renderHomeFeedHub(followedIds, allowedGameIds, showGameName) {
       </div>`
     : "";
 
+  const renderCommunityCard = (post) => {
+    const typeLabel = { free: "자유게시판", info: "정보", guide: "공략", question: "질문", discussion: "토론" }[post.type] || "게시글";
+    const excerpt = String(post.body || "").replace(/\s+/g, " ").trim().slice(0, 90);
+    const metaPrefix = showGameName ? `${homeGameMeta(post.gameId).name} · ` : "";
+    return `<a class="home-feed-card" href="#/community/post/${encodeURIComponent(post.id)}">
+      <div class="home-feed-card-top">
+        <span class="community-type-badge type-${escapeHTML(post.type)}">${escapeHTML(typeLabel)}</span>
+        ${post.official ? `<span class="home-feed-linked">공지 연결</span>` : ""}
+        <time>${escapeHTML(formatDisplayDate(post.createdAt))}</time>
+      </div>
+      <strong class="home-feed-card-title">${escapeHTML(post.title)}</strong>
+      ${excerpt ? `<p class="home-feed-card-excerpt">${escapeHTML(excerpt)}</p>` : ""}
+      <div class="home-feed-card-foot">
+        <span>${escapeHTML(`${metaPrefix}${post.author?.displayName || "게스트"}`)}</span>
+        <span class="home-community-stats"><span>♡ ${post.likesCount || 0}</span><span>댓글 ${post.commentCount || 0}</span></span>
+      </div>
+    </a>`;
+  };
+
   let bodyHtml = "";
   let rightActionHtml = "";
 
   if (activeTab === "community") {
     const sortTab = state.homeCommunityTab === "latest" ? "latest" : "popular";
     rightActionHtml = `
+      ${boardQuickLinks}
       <div class="home-inline-toggle" role="tablist" aria-label="커뮤니티 정렬">
         <button type="button" role="tab" class="${sortTab === "popular" ? "active" : ""}" aria-selected="${sortTab === "popular"}" data-action="home-community-tab" data-tab="popular">인기</button>
         <button type="button" role="tab" class="${sortTab === "latest" ? "active" : ""}" aria-selected="${sortTab === "latest"}" data-action="home-community-tab" data-tab="latest">최신</button>
@@ -635,22 +665,51 @@ function renderHomeFeedHub(followedIds, allowedGameIds, showGameName) {
       writeGameId,
       showGameName,
     }) || "";
-  } else if (activeTab === "guides") {
-    rightActionHtml = `<a class="home-hub-more" href="${escapeHTML(moreNewsHref)}">전체 소식 →</a>`;
-    bodyHtml = guides.length
-      ? `<div class="home-feed-grid">${guides.map((entry) => {
-          const href = `#/aion2/news/${encodeURIComponent(entry.item.id)}${Number.isInteger(entry.sectionIndex) ? `?section=${entry.sectionIndex}` : ""}`;
-          return `<a class="home-feed-card" href="${href}" data-action="record-article-view" data-id="${escapeHTML(entry.item.id)}">
+  } else if (activeTab === "popular") {
+    rightActionHtml = `
+      ${boardQuickLinks}
+      <a class="home-hub-more" href="${escapeHTML(popularBoardHref)}">인기 게시글 전체 →</a>`;
+    if (popularCommunityPosts.length) {
+      bodyHtml = `<div class="home-feed-grid">${popularCommunityPosts.map(renderCommunityCard).join("")}</div>`;
+    } else {
+      const storedCounts = readStorage("todaypatch.articleViews", {});
+      const viewCounts = storedCounts && typeof storedCounts === "object" && !Array.isArray(storedCounts) ? storedCounts : {};
+      const topNews = [...newsPool]
+        .sort((left, right) => (Number(viewCounts[right.id]) || 0) - (Number(viewCounts[left.id]) || 0)
+          || String(right.postedAt || "").localeCompare(String(left.postedAt || "")))
+        .slice(0, 6);
+      bodyHtml = topNews.length
+        ? `<div class="home-feed-grid">${topNews.map((item) => `<a class="home-feed-card" href="${escapeHTML(item.href)}" data-action="record-article-view" data-id="${escapeHTML(item.id)}">
             <div class="home-feed-card-top">
-              <span class="category-pill category-${categoryClass(displayNewsCategory(entry.item))}">${escapeHTML(displayNewsCategory(entry.item))}</span>
-              <time>${escapeHTML(entry.item.date || "")}</time>
+              <span class="category-pill category-${categoryClass(item.displayCategory)}">${escapeHTML(item.displayCategory)}</span>
+              ${showGameName ? `<span class="home-feed-game-label">${escapeHTML(item.gameName)}</span>` : ""}
+              <time>${escapeHTML(item.date || "")}</time>
             </div>
-            <strong class="home-feed-card-title">${escapeHTML(entry.title)}</strong>
-            <p class="home-feed-card-excerpt">${escapeHTML(entry.description)}</p>
-            <div class="home-feed-card-foot"><span>${escapeHTML(entry.item.title)}</span></div>
-          </a>`;
-        }).join("")}</div>`
-      : `<div class="home-hub-empty"><strong>정리된 공략 항목이 아직 없어요.</strong><p>공식 패치나 가이드 정보가 수집되면 핵심 공략을 자동으로 추려 보여드립니다.</p></div>`;
+            <strong class="home-feed-card-title">${escapeHTML(item.title)}</strong>
+            ${item.excerpt ? `<p class="home-feed-card-excerpt">${escapeHTML(item.excerpt)}</p>` : ""}
+          </a>`).join("")}</div>`
+        : `<div class="home-hub-empty"><strong>인기 게시글을 준비 중이에요.</strong><p>커뮤니티 인기 게시판에서 새 글을 작성해 보세요.</p><a class="primary-button" href="${escapeHTML(popularBoardHref)}">인기 게시판으로 이동</a></div>`;
+    }
+  } else if (activeTab === "guides") {
+    rightActionHtml = `
+      <a class="home-write-chip" href="#/community/new?gameId=${encodeURIComponent(writeGameId)}&type=guide">+ 공략 쓰기</a>
+      <a class="home-hub-more" href="${escapeHTML(guideBoardHref)}">인기 공략글 전체 →</a>`;
+    const officialGuideCards = guides.map((entry) => {
+      const href = `#/aion2/news/${encodeURIComponent(entry.item.id)}${Number.isInteger(entry.sectionIndex) ? `?section=${entry.sectionIndex}` : ""}`;
+      return `<a class="home-feed-card" href="${href}" data-action="record-article-view" data-id="${escapeHTML(entry.item.id)}">
+        <div class="home-feed-card-top">
+          <span class="category-pill category-${categoryClass(displayNewsCategory(entry.item))}">${escapeHTML(displayNewsCategory(entry.item))}</span>
+          <time>${escapeHTML(entry.item.date || "")}</time>
+        </div>
+        <strong class="home-feed-card-title">${escapeHTML(entry.title)}</strong>
+        <p class="home-feed-card-excerpt">${escapeHTML(entry.description)}</p>
+        <div class="home-feed-card-foot"><span>${escapeHTML(entry.item.title)}</span></div>
+      </a>`;
+    });
+    const mergedCards = [...popularGuidePosts.map(renderCommunityCard), ...officialGuideCards].slice(0, 6);
+    bodyHtml = mergedCards.length
+      ? `<div class="home-feed-grid">${mergedCards.join("")}</div>`
+      : `<div class="home-hub-empty"><strong>등록된 공략글이 아직 없어요.</strong><p>공략 게시판에서 첫 공략을 작성해 보세요.</p><a class="primary-button" href="${escapeHTML(guideBoardHref)}">공략 게시판으로 이동</a></div>`;
   } else {
     const visibleNews = newsPool.slice(0, 6);
     rightActionHtml = `<a class="home-hub-more" href="${escapeHTML(moreNewsHref)}">전체 보기 →</a>`;
@@ -667,13 +726,15 @@ function renderHomeFeedHub(followedIds, allowedGameIds, showGameName) {
       : `<div class="home-hub-empty"><strong>연동된 공식 소식이 아직 없어요.</strong><p>선택한 게임의 공식 게시판이 연결되면 새 소식이 자동으로 표시됩니다.</p></div>`;
   }
 
+  const guidesTotalCount = popularGuidePosts.length + guides.length;
   return `
     <section class="home-content-panel home-feed-hub" aria-label="팔로우한 게임 통합 피드">
       <div class="home-hub-bar">
         <div class="home-segmented-control" role="tablist" aria-label="피드 종류">
           <button type="button" role="tab" class="home-segment ${activeTab === "news" ? "active" : ""}" aria-selected="${activeTab === "news"}" data-action="home-feed-tab" data-tab="news">최신 소식 <span>${newsPool.length}</span></button>
+          <button type="button" role="tab" class="home-segment ${activeTab === "popular" ? "active" : ""}" aria-selected="${activeTab === "popular"}" data-action="home-feed-tab" data-tab="popular">인기 게시글</button>
+          <button type="button" role="tab" class="home-segment ${activeTab === "guides" ? "active" : ""}" aria-selected="${activeTab === "guides"}" data-action="home-feed-tab" data-tab="guides">인기 공략글 ${guidesTotalCount ? `<span>${guidesTotalCount}</span>` : ""}</button>
           <button type="button" role="tab" class="home-segment ${activeTab === "community" ? "active" : ""}" aria-selected="${activeTab === "community"}" data-action="home-feed-tab" data-tab="community">커뮤니티 ${communityCount ? `<span>${communityCount}</span>` : ""}</button>
-          <button type="button" role="tab" class="home-segment ${activeTab === "guides" ? "active" : ""}" aria-selected="${activeTab === "guides"}" data-action="home-feed-tab" data-tab="guides">인기 공략 ${guides.length ? `<span>${guides.length}</span>` : ""}</button>
         </div>
         <div class="home-hub-controls">
           ${gameFilterHtml}
@@ -1219,6 +1280,8 @@ function renderDashboardPage() {
   const posts = userPosts();
   const calendarEvents = dashboardCalendarEvents();
   const accountSyncEnabled = window.todaypatchCommunity?.hasRegisteredAccount?.() === true;
+  const myCommunityStats = window.todaypatchCommunity?.getMyPostsStats?.() || { count: 0, totalLikes: 0, totalComments: 0 };
+  const defaultCommunityGameId = followed[0]?.id || "aion2";
   const accountSyncMessage = accountSyncEnabled
     ? "팔로우, 북마크, 읽음 상태, 할 일과 개인 메모가 계정에 저장되어 기기 간 동기화됩니다."
     : "계정에 로그인하면 팔로우, 북마크, 할 일과 개인 메모를 다른 기기에서도 이어서 볼 수 있습니다.";
@@ -1228,7 +1291,8 @@ function renderDashboardPage() {
       <div class="dashboard-stats" aria-label="내 활동 요약">
         <div class="dashboard-stat"><span>팔로우 게임</span><strong>${followed.length}</strong></div>
         <div class="dashboard-stat"><span>저장한 북마크</span><strong>${bookmarks.length}</strong></div>
-        <div class="dashboard-stat"><span>내 작성 글</span><strong>${posts.length}</strong></div>
+        <div class="dashboard-stat dashboard-stat-accent"><span>내 커뮤니티 게시글</span><strong>${myCommunityStats.count}</strong></div>
+        <div class="dashboard-stat"><span>개인 메모</span><strong>${posts.length}</strong></div>
       </div>
       <div class="dashboard-columns">
         <section class="dashboard-section" aria-labelledby="dashboard-games-title">
@@ -1240,19 +1304,33 @@ function renderDashboardPage() {
           ${bookmarks.length ? `<div class="news-list dashboard-news-list">${bookmarks.slice(0, 4).map(renderNewsCard).join("")}</div>` : `<div class="dashboard-empty"><p>저장한 게시물이 없습니다.</p><a href="#/aion2/news">전체 소식 보기 <span aria-hidden="true">→</span></a></div>`}
         </section>
       </div>
+      <section class="dashboard-section dashboard-my-community" aria-labelledby="dashboard-my-community-title">
+        <div class="dashboard-section-heading">
+          <div>
+            <span class="page-eyebrow">MY COMMUNITY POSTS</span>
+            <h2 id="dashboard-my-community-title">내가 작성한 커뮤니티 게시글</h2>
+            <p>자유·정보·공략 등 커뮤니티에 공개한 내 글을 한눈에 확인하고 관리할 수 있습니다.</p>
+          </div>
+          <div class="dashboard-my-community-head-actions">
+            ${myCommunityStats.count ? `<div class="dashboard-my-post-summary"><span>총 <b>${myCommunityStats.count}</b>건</span><span>♡ <b>${myCommunityStats.totalLikes}</b></span><span>댓글 <b>${myCommunityStats.totalComments}</b></span></div>` : ""}
+            <a class="primary-button" href="#/community/new?gameId=${encodeURIComponent(defaultCommunityGameId)}">+ 새 게시글 쓰기</a>
+          </div>
+        </div>
+        ${window.todaypatchCommunity?.renderMyPostsDashboard?.(defaultCommunityGameId) || ""}
+      </section>
       <section class="dashboard-section dashboard-community" aria-labelledby="dashboard-community-title">
-        <div class="dashboard-section-heading"><div><span class="page-eyebrow">FOLLOWED COMMUNITY</span><h2 id="dashboard-community-title">팔로우한 게임 새 게시글</h2><p>선택한 게임의 새 글을 한곳에서 확인하세요.</p></div><a class="dashboard-more" href="#/community?gameId=aion2">커뮤니티 열기 →</a></div>
+        <div class="dashboard-section-heading"><div><span class="page-eyebrow">FOLLOWED COMMUNITY</span><h2 id="dashboard-community-title">팔로우한 게임 새 게시글</h2><p>선택한 게임의 새 글을 한곳에서 확인하세요.</p></div><a class="dashboard-more" href="#/community?gameId=${encodeURIComponent(defaultCommunityGameId)}">커뮤니티 열기 →</a></div>
         ${followed.length ? (window.todaypatchCommunity?.renderPreview(followed.map((item) => item.id), 5) || "") : `<div class="dashboard-empty"><p>게임을 팔로우하면 새 커뮤니티 글이 여기에 표시됩니다.</p><a href="#/">게임 찾아보기 →</a></div>`}
       </section>
       ${renderDashboardCalendar(calendarEvents)}
       <section class="dashboard-section dashboard-posts" aria-labelledby="dashboard-posts-title">
-        <div class="dashboard-section-heading"><div><span class="page-eyebrow">MY POSTS</span><h2 id="dashboard-posts-title">내가 작성한 글</h2><p>${accountSyncEnabled ? "계정에 저장되어 나만 볼 수 있으며, 다른 기기에서도 이어서 확인할 수 있습니다." : "로그인 전에는 이 브라우저에 저장되며, 계정에 로그인하면 다른 기기에서도 이어서 볼 수 있습니다."}</p></div><button class="primary-button" type="button" data-action="toggle-post-form" aria-expanded="false">글 작성하기</button></div>
+        <div class="dashboard-section-heading"><div><span class="page-eyebrow">PERSONAL NOTES</span><h2 id="dashboard-posts-title">개인 메모</h2><p>${accountSyncEnabled ? "계정에 저장되어 나만 볼 수 있으며, 다른 기기에서도 이어서 확인할 수 있습니다." : "로그인 전에는 이 브라우저에 저장되며, 계정에 로그인하면 다른 기기에서도 이어서 볼 수 있습니다."}</p></div><button class="secondary-button" type="button" data-action="toggle-post-form" aria-expanded="false">메모 작성하기</button></div>
         <form id="user-post-form" class="post-composer" hidden>
-          <label for="user-post-title">제목</label><input id="user-post-title" name="title" type="text" maxlength="100" placeholder="글 제목을 입력하세요" required />
+          <label for="user-post-title">제목</label><input id="user-post-title" name="title" type="text" maxlength="100" placeholder="메모 제목을 입력하세요" required />
           <label for="user-post-body">내용</label><textarea id="user-post-body" name="body" rows="5" maxlength="5000" placeholder="나중에 다시 볼 내용을 적어두세요" required></textarea>
           <div class="post-composer-actions"><span>${accountSyncEnabled ? "저장한 메모는 계정과 동기화됩니다." : "로그인하면 계정으로 저장해 여러 기기에서 볼 수 있습니다."}</span><button class="primary-button" type="submit">저장</button></div>
         </form>
-        ${posts.length ? `<div class="user-post-list">${posts.map(renderUserPost).join("")}</div>` : `<div class="dashboard-empty post-empty"><p>아직 작성한 글이 없습니다.</p><span>글 작성하기를 눌러 메모나 공략을 저장해 보세요.</span></div>`}
+        ${posts.length ? `<div class="user-post-list">${posts.map(renderUserPost).join("")}</div>` : `<div class="dashboard-empty post-empty"><p>아직 작성한 개인 메모가 없습니다.</p><span>메모 작성하기를 눌러 나만의 공략이나 일정을 기록해 보세요.</span></div>`}
       </section>
     </main>`;
 }
@@ -2318,7 +2396,7 @@ app.addEventListener("click", (event) => {
   }
   if (action === "home-feed-tab") {
     const nextTab = button.dataset.tab || "news";
-    if (["news", "community", "guides"].includes(nextTab) && state.homeFeedTab !== nextTab) {
+    if (["news", "popular", "guides", "community"].includes(nextTab) && state.homeFeedTab !== nextTab) {
       state.homeFeedTab = nextTab;
       render();
     }
