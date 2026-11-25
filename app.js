@@ -32,7 +32,7 @@ const displayNewsCategory = (item) => isAionCmStory(item) ? "CM 아지트" : ite
 const displayNewsSource = (item) => isAionCmStory(item)
   ? String(item.source || "아이온2 공식 CM 아지트").replace(/CM 이야기/g, "CM 아지트")
   : item.source;
-const state = { filter: "전체", query: "", gameQuery: "", dokkaebiQuery: "", dokkaebiFilter: "전체", gameSearchFocused: false, notificationsOpen: false, tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [], detailTab: "sections", detailItemId: "", homeGameFilter: "all", homeNewsCategory: "전체", homeCommunityTab: "popular" };
+const state = { filter: "전체", query: "", gameQuery: "", dokkaebiQuery: "", dokkaebiFilter: "전체", gameSearchFocused: false, notificationsOpen: false, tutorialStep: 0, tutorialShownInSession: false, calendarOffset: 0, chatOpen: false, chatMessages: [], detailTab: "sections", detailItemId: "", homeGameFilter: "all", homeFeedTab: "news", homeCommunityTab: "popular" };
 const app = document.querySelector("#app");
 let releaseCountdownTimer = null;
 const syncedPreferenceKeys = {
@@ -518,125 +518,213 @@ function homeUpcomingDeadlines(allowedGameIds) {
   return upcoming.sort((left, right) => left.daysUntil - right.daysUntil || left.targetDate.localeCompare(right.targetDate)).slice(0, 3);
 }
 
-function renderHomeGameFilterBar(followedIds) {
-  if (followedIds.length <= 1) return "";
-  const activeFilter = followedIds.includes(state.homeGameFilter) ? state.homeGameFilter : "all";
-  const selectedGame = gameCatalog.find((entry) => entry.id === activeFilter);
-  const pills = [
-    { id: "all", label: `전체 (${followedIds.length})`, icon: "" },
-    ...followedIds.map((id) => {
-      const meta = homeGameMeta(id);
-      return { id, label: meta.name, icon: meta.icon };
-    }),
-  ];
-  return `
-    <section class="home-filter-bar" aria-label="팔로우한 게임 필터">
-      <div class="home-filter-pills" role="tablist" aria-label="게임별 보기">
-        ${pills.map((pill) => `<button type="button" role="tab" class="home-filter-pill ${activeFilter === pill.id ? "active" : ""}" aria-selected="${activeFilter === pill.id}" data-action="home-game-filter" data-game-id="${escapeHTML(pill.id)}">${pill.icon ? `<img src="${escapeHTML(pill.icon)}" alt="" />` : ""}<span>${escapeHTML(pill.label)}</span></button>`).join("")}
-      </div>
-      ${selectedGame ? `<a class="home-filter-open-link" href="${escapeHTML(selectedGame.route)}">${escapeHTML(selectedGame.name)} 바로가기 →</a>` : ""}
-    </section>`;
+function homeGuideEntries(allowedGameIds) {
+  const allowed = new Set(allowedGameIds);
+  if (!allowed.has(game.id)) return [];
+  const guideHeadingPattern = /공략|가이드|방법|경로|설정|세팅|스킬|직업|성장|육성/u;
+  const storedCounts = readStorage("todaypatch.articleViews", {});
+  const viewCounts = storedCounts && typeof storedCounts === "object" && !Array.isArray(storedCounts) ? storedCounts : {};
+  const entries = [];
+  for (const item of newsItems.filter(isAionNewsItem)) {
+    const sections = Array.isArray(item.sections) ? item.sections : [];
+    const matchedSection = sections
+      .map((section, index) => ({ section, index }))
+      .filter(({ section }) => section && typeof section === "object"
+        && guideHeadingPattern.test(`${section.heading || ""} ${section.summary || ""} ${(section.importantDetails || []).join(" ")}`))
+      .sort((left, right) => {
+        const scoreOf = (section) => (`${section.heading || ""} ${section.summary || ""} ${(section.importantDetails || []).join(" ")}`.match(/공략|가이드|방법|스킬|세팅|경로/gu) || []).length;
+        return scoreOf(right.section) - scoreOf(left.section);
+      })[0];
+    const isGuidePost = /공략|가이드/u.test(`${item.title || ""} ${item.category || ""}`);
+    if (!matchedSection && !isGuidePost) continue;
+    const details = Array.isArray(matchedSection?.section.importantDetails) ? matchedSection.section.importantDetails : [];
+    const viewScore = Math.min(20, Number(viewCounts[item.id]) || 0) * 2;
+    entries.push({
+      item,
+      sectionIndex: matchedSection ? matchedSection.index : null,
+      title: matchedSection?.section.heading || item.title,
+      description: matchedSection?.section.summary || details[0] || item.summary || item.excerpt || "",
+      score: viewScore + Number(isSaved(item.id)) * 4 + Number(isRead(item.id)),
+    });
+  }
+  return entries.sort((left, right) => right.score - left.score || String(right.item.postedAt || "").localeCompare(String(left.item.postedAt || ""))).slice(0, 6);
 }
 
-function renderHomeFollowEmptyState() {
-  return `
-    <section class="home-onboarding-card" aria-labelledby="home-onboarding-title">
-      <h2 id="home-onboarding-title">팔로우한 게임만 깔끔하게 모아보세요</h2>
-      <p>관심 게임을 팔로우하면 해당 게임의 패치 요약, 쿠폰·일정, 커뮤니티 글만 메인에 표시됩니다.</p>
-      <div class="home-onboarding-games">
-        ${gameCatalog.map((item) => `
-          <div class="home-onboarding-item">
-            <a class="home-onboarding-link" href="${escapeHTML(item.route)}">
-              <img src="${escapeHTML(item.icon)}" alt="" />
-              <span><strong>${escapeHTML(item.displayTitle || item.name)}</strong><small>${item.upcoming ? `${escapeHTML(releaseDateLabel(item.releaseDate))} 출시 예정` : item.id === game.id ? "공식 패치 · 커뮤니티" : "게임 허브 · 커뮤니티"}</small></span>
-            </a>
-            <button type="button" class="game-follow-button" data-action="toggle-follow" data-game-id="${escapeHTML(item.id)}">팔로우</button>
-          </div>`).join("")}
+function renderHomeUtilityStrip(allowedGameIds, showGameName = false) {
+  const coupons = homeActiveCoupons(allowedGameIds);
+  const deadlines = homeUpcomingDeadlines(allowedGameIds);
+  if (!coupons.length && !deadlines.length) return "";
+  const couponPart = coupons.map((coupon) => `
+    <div class="bento-utility-coupon">
+      <span class="home-coupon-label">쿠폰</span>
+      <code>${escapeHTML(coupon.code)}</code>
+      <button type="button" class="coupon-copy-button" data-action="copy-coupon" data-code="${escapeHTML(coupon.code)}">복사</button>
+      <a class="home-coupon-link" href="#/aion2/news/${encodeURIComponent(coupon.newsId)}">안내 ↗</a>
+    </div>`).join("");
+  const deadlinePart = deadlines.length
+    ? `<div class="bento-utility-deadlines">${deadlines.map((event) => {
+        const dday = event.daysUntil === 0 ? "D-Day" : `D-${event.daysUntil}`;
+        const urgentClass = event.daysUntil <= 3 ? " urgent" : "";
+        return `<a class="bento-deadline-chip" href="#/aion2/news/${encodeURIComponent(event.newsId)}" title="${escapeHTML(`${showGameName ? `${event.gameName} · ` : ""}${event.title} (${formatEventDate(event.targetDate)} ${event.kindLabel})`)}">
+          <span class="home-dday-badge${urgentClass}">${dday}</span>
+          <span>${escapeHTML(event.title)}</span>
+        </a>`;
+      }).join("")}<a class="bento-calendar-link" href="#/dashboard">캘린더 →</a></div>`
+    : "";
+  return `<section class="home-utility-strip" aria-label="쿠폰 및 마감 임박 일정">${couponPart}${deadlinePart}</section>`;
+}
+
+function renderHomeFeedHub(followedIds, allowedGameIds, showGameName) {
+  if (!followedIds.length) {
+    return `
+      <section class="home-content-panel home-feed-hub" aria-labelledby="home-feed-hub-heading">
+        <div class="home-hub-header">
+          <div>
+            <h2 id="home-feed-hub-heading">팔로우한 게임 피드</h2>
+            <p class="home-hub-sub">관심 게임을 팔로우하면 해당 게임의 소식·커뮤니티·공략만 이곳에 모아 보여드립니다.</p>
+          </div>
+        </div>
+        <div class="home-quick-follow-grid">
+          ${gameCatalog.map((item) => `
+            <div class="home-quick-follow-card">
+              <a class="home-quick-follow-link" href="${escapeHTML(item.route)}">
+                <img src="${escapeHTML(item.icon)}" alt="" />
+                <span><strong>${escapeHTML(item.displayTitle || item.name)}</strong><small>${item.upcoming ? `${escapeHTML(releaseDateLabel(item.releaseDate))} 출시 예정` : item.id === game.id ? "공식 패치 · AI 요약 · 커뮤니티" : "게임 허브 · 커뮤니티"}</small></span>
+              </a>
+              <button type="button" class="game-follow-button" data-action="toggle-follow" data-game-id="${escapeHTML(item.id)}">팔로우</button>
+            </div>`).join("")}
+        </div>
+      </section>`;
+  }
+
+  const newsPool = homeOfficialNewsPool(allowedGameIds);
+  const guides = homeGuideEntries(allowedGameIds);
+  const communityCount = window.todaypatchCommunity?.homeFeedCount?.(allowedGameIds) || 0;
+  const activeTab = ["news", "community", "guides"].includes(state.homeFeedTab) ? state.homeFeedTab : "news";
+  const writeGameId = allowedGameIds[0] || "aion2";
+  const moreNewsHref = allowedGameIds.length === 1 && allowedGameIds[0] !== game.id
+    ? homeGameMeta(allowedGameIds[0]).route
+    : "#/aion2/news";
+
+  const gameFilterHtml = followedIds.length > 1
+    ? `<div class="home-hub-game-filters" role="group" aria-label="팔로우 게임 필터">
+        <button type="button" class="home-filter-pill ${state.homeGameFilter === "all" || !followedIds.includes(state.homeGameFilter) ? "active" : ""}" data-action="home-game-filter" data-game-id="all">전체</button>
+        ${followedIds.map((id) => {
+          const meta = homeGameMeta(id);
+          return `<button type="button" class="home-filter-pill ${state.homeGameFilter === id ? "active" : ""}" data-action="home-game-filter" data-game-id="${escapeHTML(id)}"><img src="${escapeHTML(meta.icon)}" alt="" /><span>${escapeHTML(meta.name)}</span></button>`;
+        }).join("")}
+      </div>`
+    : "";
+
+  let bodyHtml = "";
+  let rightActionHtml = "";
+
+  if (activeTab === "community") {
+    const sortTab = state.homeCommunityTab === "latest" ? "latest" : "popular";
+    rightActionHtml = `
+      <div class="home-inline-toggle" role="tablist" aria-label="커뮤니티 정렬">
+        <button type="button" role="tab" class="${sortTab === "popular" ? "active" : ""}" aria-selected="${sortTab === "popular"}" data-action="home-community-tab" data-tab="popular">인기</button>
+        <button type="button" role="tab" class="${sortTab === "latest" ? "active" : ""}" aria-selected="${sortTab === "latest"}" data-action="home-community-tab" data-tab="latest">최신</button>
       </div>
+      <a class="home-write-chip" href="#/community/new?gameId=${encodeURIComponent(writeGameId)}">+ 글쓰기</a>
+      <a class="home-hub-more" href="#/community?gameId=${encodeURIComponent(writeGameId)}">게시판 →</a>`;
+    bodyHtml = window.todaypatchCommunity?.renderHomePreview({
+      gameIds: allowedGameIds,
+      tab: sortTab,
+      limit: 6,
+      writeGameId,
+      showGameName,
+    }) || "";
+  } else if (activeTab === "guides") {
+    rightActionHtml = `<a class="home-hub-more" href="${escapeHTML(moreNewsHref)}">전체 소식 →</a>`;
+    bodyHtml = guides.length
+      ? `<div class="home-feed-grid">${guides.map((entry) => {
+          const href = `#/aion2/news/${encodeURIComponent(entry.item.id)}${Number.isInteger(entry.sectionIndex) ? `?section=${entry.sectionIndex}` : ""}`;
+          return `<a class="home-feed-card" href="${href}" data-action="record-article-view" data-id="${escapeHTML(entry.item.id)}">
+            <div class="home-feed-card-top">
+              <span class="category-pill category-${categoryClass(displayNewsCategory(entry.item))}">${escapeHTML(displayNewsCategory(entry.item))}</span>
+              <time>${escapeHTML(entry.item.date || "")}</time>
+            </div>
+            <strong class="home-feed-card-title">${escapeHTML(entry.title)}</strong>
+            <p class="home-feed-card-excerpt">${escapeHTML(entry.description)}</p>
+            <div class="home-feed-card-foot"><span>${escapeHTML(entry.item.title)}</span></div>
+          </a>`;
+        }).join("")}</div>`
+      : `<div class="home-hub-empty"><strong>정리된 공략 항목이 아직 없어요.</strong><p>공식 패치나 가이드 정보가 수집되면 핵심 공략을 자동으로 추려 보여드립니다.</p></div>`;
+  } else {
+    const visibleNews = newsPool.slice(0, 6);
+    rightActionHtml = `<a class="home-hub-more" href="${escapeHTML(moreNewsHref)}">전체 보기 →</a>`;
+    bodyHtml = visibleNews.length
+      ? `<div class="home-feed-grid">${visibleNews.map((item) => `<a class="home-feed-card" href="${escapeHTML(item.href)}" data-action="record-article-view" data-id="${escapeHTML(item.id)}">
+          <div class="home-feed-card-top">
+            <span class="category-pill category-${categoryClass(item.displayCategory)}">${escapeHTML(item.displayCategory)}</span>
+            ${showGameName ? `<span class="home-feed-game-label">${escapeHTML(item.gameName)}</span>` : ""}
+            <time>${escapeHTML(item.date || "")}</time>
+          </div>
+          <strong class="home-feed-card-title">${escapeHTML(item.title)}</strong>
+          ${item.excerpt ? `<p class="home-feed-card-excerpt">${escapeHTML(item.excerpt)}</p>` : ""}
+        </a>`).join("")}</div>`
+      : `<div class="home-hub-empty"><strong>연동된 공식 소식이 아직 없어요.</strong><p>선택한 게임의 공식 게시판이 연결되면 새 소식이 자동으로 표시됩니다.</p></div>`;
+  }
+
+  return `
+    <section class="home-content-panel home-feed-hub" aria-label="팔로우한 게임 통합 피드">
+      <div class="home-hub-bar">
+        <div class="home-segmented-control" role="tablist" aria-label="피드 종류">
+          <button type="button" role="tab" class="home-segment ${activeTab === "news" ? "active" : ""}" aria-selected="${activeTab === "news"}" data-action="home-feed-tab" data-tab="news">최신 소식 <span>${newsPool.length}</span></button>
+          <button type="button" role="tab" class="home-segment ${activeTab === "community" ? "active" : ""}" aria-selected="${activeTab === "community"}" data-action="home-feed-tab" data-tab="community">커뮤니티 ${communityCount ? `<span>${communityCount}</span>` : ""}</button>
+          <button type="button" role="tab" class="home-segment ${activeTab === "guides" ? "active" : ""}" aria-selected="${activeTab === "guides"}" data-action="home-feed-tab" data-tab="guides">인기 공략 ${guides.length ? `<span>${guides.length}</span>` : ""}</button>
+        </div>
+        <div class="home-hub-controls">
+          ${gameFilterHtml}
+          <div class="home-hub-actions">${rightActionHtml}</div>
+        </div>
+      </div>
+      <div class="home-hub-body" role="tabpanel">${bodyHtml}</div>
     </section>`;
 }
 
 function renderHome() {
   const followedIds = homeFollowedCatalogIds();
   const allowedGameIds = homeActiveGameIds();
+  const hasFollowed = followedIds.length > 0;
   const showGameName = allowedGameIds.length > 1;
-  const upcomingHtml = renderUpcomingReleases(allowedGameIds);
-  const contentSection = followedIds.length
-    ? `${renderHomeGameFilterBar(followedIds)}
-      <section class="home-content-grid" aria-label="팔로우한 게임 소식과 커뮤니티">
-        ${renderPatchBriefPanel(allowedGameIds, showGameName)}
-        <div class="home-right-stack">
-          ${renderHomeDeadlinesPanel(allowedGameIds, showGameName)}
-          ${upcomingHtml}
-        </div>
-        ${renderHomeOfficialFeedPanel(allowedGameIds, showGameName)}
-        ${renderCommunityHomePanel(allowedGameIds, showGameName)}
-      </section>`
-    : renderHomeFollowEmptyState();
+  const heroGameIds = hasFollowed ? allowedGameIds : gameCatalog.map((entry) => entry.id);
+  const upcomingHtml = renderUpcomingReleases(heroGameIds);
+  const rightBentoCard = upcomingHtml || renderHomeDeadlinesPanel(heroGameIds, showGameName);
+  const utilityStrip = upcomingHtml && hasFollowed ? renderHomeUtilityStrip(allowedGameIds, showGameName) : "";
 
   return `
     <main class="home-page">
       <section class="home-search" aria-labelledby="home-title">
         <h1 id="home-title">어떤 게임을 찾으세요?</h1>
-        <p>팔로우한 게임의 패치노트, 일정, 커뮤니티를 한곳에서 확인하세요.</p>
+        <p>패치노트, 공지, 업데이트, 커뮤니티를 한곳에서 확인해 보세요.</p>
         <label class="search-field game-search-field">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4 4"/></svg>
           <input id="game-search" type="search" value="${escapeHTML(state.gameQuery)}" placeholder="게임 이름 검색" autocomplete="off" aria-label="게임 이름 검색" />
         </label>
         <div class="game-results" id="game-results" aria-live="polite"></div>
       </section>
-      ${followedIds.length ? renderFollowedGameShortcuts() : ""}
-      ${contentSection}
+      ${renderFollowedGameShortcuts()}
+      <section class="home-bento-hero" aria-label="주요 패치 및 일정 하이라이트">
+        ${renderPatchBriefPanel(heroGameIds, showGameName, !hasFollowed)}
+        ${rightBentoCard}
+      </section>
+      ${utilityStrip}
+      ${renderHomeFeedHub(followedIds, allowedGameIds, showGameName)}
     </main>`;
-}
-
-function renderCommunityHomePanel(allowedGameIds = homeActiveGameIds(), showGameName = false) {
-  const writeGameId = allowedGameIds[0] || "aion2";
-  const activeTab = state.homeCommunityTab === "latest" ? "latest" : "popular";
-  const preview = window.todaypatchCommunity?.renderHomePreview({
-    gameIds: allowedGameIds,
-    tab: activeTab,
-    limit: 4,
-    writeGameId,
-    showGameName,
-  }) || "";
-  return `
-    <section class="home-content-panel home-community-panel" aria-labelledby="community-home-heading">
-      <div class="home-panel-heading">
-        <h2 id="community-home-heading">커뮤니티</h2>
-        <div class="home-panel-actions">
-          <div class="home-inline-toggle" role="tablist" aria-label="커뮤니티 정렬">
-            <button type="button" role="tab" class="${activeTab === "popular" ? "active" : ""}" aria-selected="${activeTab === "popular"}" data-action="home-community-tab" data-tab="popular">인기</button>
-            <button type="button" role="tab" class="${activeTab === "latest" ? "active" : ""}" aria-selected="${activeTab === "latest"}" data-action="home-community-tab" data-tab="latest">최신</button>
-          </div>
-          <a class="home-write-chip" href="#/community/new?gameId=${encodeURIComponent(writeGameId)}">글쓰기</a>
-          <a href="#/community?gameId=${encodeURIComponent(writeGameId)}">더보기 →</a>
-        </div>
-      </div>
-      ${preview}
-    </section>`;
 }
 
 function renderFollowedGameShortcuts() {
   const followedGames = gameCatalog.filter((item) => isGameFollowed(item.id));
-  return `<section class="home-shortcuts" aria-label="팔로우한 게임 바로가기"><div class="home-game-shortcuts">${followedGames.map((item) => `<a class="home-game-shortcut" href="${escapeHTML(item.route)}" data-game-menu="remove" data-game-id="${escapeHTML(item.id)}" title="${escapeHTML(item.name)} 열기 · 우클릭 또는 길게 눌러 팔로우 해제"><span class="home-game-shortcut-icon"><img src="${escapeHTML(item.icon)}" alt="" /></span><span>${escapeHTML(item.name)}</span></a>`).join("")}</div></section>`;
+  return `<section class="home-shortcuts" aria-label="팔로우한 게임 바로가기"><div class="home-game-shortcuts">${followedGames.length
+    ? followedGames.map((item) => `<a class="home-game-shortcut" href="${escapeHTML(item.route)}" data-game-menu="remove" data-game-id="${escapeHTML(item.id)}" title="${escapeHTML(item.name)} 열기 · 우클릭 또는 길게 눌러 팔로우 해제"><span class="home-game-shortcut-icon"><img src="${escapeHTML(item.icon)}" alt="" /></span><span>${escapeHTML(item.name)}</span></a>`).join("")
+    : `<p class="home-shortcut-empty">게임을 팔로우하면 아이콘이 여기에 표시됩니다.</p>`}</div></section>`;
 }
 
 function renderHomeDeadlinesPanel(allowedGameIds, showGameName = false) {
   const coupons = homeActiveCoupons(allowedGameIds);
   const deadlines = homeUpcomingDeadlines(allowedGameIds);
-  if (!coupons.length && !deadlines.length) {
-    const onlyUpcoming = allowedGameIds.length === 1 && homeGameMeta(allowedGameIds[0]).upcoming;
-    if (onlyUpcoming) return "";
-    return `
-      <section class="home-content-panel home-deadlines-panel" aria-labelledby="deadlines-heading">
-        <div class="home-panel-heading">
-          <h2 id="deadlines-heading">일정 · 쿠폰</h2>
-          <a href="#/dashboard">캘린더 →</a>
-        </div>
-        <div class="home-section-empty compact"><strong>예정된 마감 일정이 없습니다.</strong><p>새 이벤트나 쿠폰이 수집되면 이곳에 표시됩니다.</p></div>
-      </section>`;
-  }
   const couponHtml = coupons.map((coupon) => `
     <div class="home-coupon-strip">
       <span class="home-coupon-label">쿠폰</span>
@@ -657,11 +745,11 @@ function renderHomeDeadlinesPanel(allowedGameIds, showGameName = false) {
           </span>
         </a>`;
       }).join("")}</div>`
-    : "";
+    : `<div class="home-section-empty compact"><strong>예정된 마감 일정이 없습니다.</strong><p>새 이벤트나 쿠폰이 수집되면 이곳에 표시됩니다.</p></div>`;
   return `
     <section class="home-content-panel home-deadlines-panel" aria-labelledby="deadlines-heading">
       <div class="home-panel-heading">
-        <h2 id="deadlines-heading">일정 · 쿠폰</h2>
+        <div><span class="home-eyebrow">SCHEDULE & COUPON</span><h2 id="deadlines-heading">일정 · 쿠폰</h2></div>
         <a href="#/dashboard">캘린더 →</a>
       </div>
       ${couponHtml}
@@ -669,49 +757,26 @@ function renderHomeDeadlinesPanel(allowedGameIds, showGameName = false) {
     </section>`;
 }
 
-function renderHomeOfficialFeedPanel(allowedGameIds, showGameName = false) {
-  const pool = homeOfficialNewsPool(allowedGameIds);
-  const items = pool.slice(0, 4);
-  const moreHref = allowedGameIds.length === 1 && allowedGameIds[0] !== game.id
-    ? homeGameMeta(allowedGameIds[0]).route
-    : "#/aion2/news";
-  return `
-    <section class="home-content-panel home-official-feed" aria-labelledby="official-feed-heading">
-      <div class="home-panel-heading">
-        <h2 id="official-feed-heading">최신 공식 소식</h2>
-        <a href="${escapeHTML(moreHref)}">더보기 →</a>
-      </div>
-      ${items.length
-        ? `<div class="home-post-list">${items.map((item) => `<a class="home-post-row" href="${escapeHTML(item.href)}" data-action="record-article-view" data-id="${escapeHTML(item.id)}">
-            <div class="home-post-line">
-              <span class="category-pill category-${categoryClass(item.displayCategory)}">${escapeHTML(item.displayCategory)}</span>
-              <strong>${escapeHTML(item.title)}</strong>
-            </div>
-            <span class="home-post-sub">${escapeHTML(`${showGameName ? `${item.gameName} · ` : ""}${item.date || ""}`)}</span>
-          </a>`).join("")}</div>`
-        : `<div class="home-section-empty compact"><strong>연동된 공식 소식이 아직 없어요.</strong><p>공식 게시판이 연결되면 이곳에 자동으로 표시됩니다.</p></div>`}
-    </section>`;
-}
-
-function renderPatchBriefPanel(allowedGameIds = homeActiveGameIds(), showGameName = false) {
+function renderPatchBriefPanel(allowedGameIds = homeActiveGameIds(), showGameName = false, isDefaultShowcase = false) {
   const allowed = new Set(allowedGameIds);
   const aionUpdate = allowed.has(game.id)
     ? (newsItems.find((entry) => isAionNewsItem(entry) && entry.sourceKey === "update") || newsItems.find(isAionNewsItem))
     : null;
   if (!aionUpdate) {
     const selected = allowedGameIds.length === 1 ? homeGameMeta(allowedGameIds[0]) : null;
-    const title = selected ? `${selected.name} 소식` : "최신 패치";
+    const title = selected ? `${selected.name} 브리핑` : "오늘의 패치 브리핑";
     const copy = selected?.upcoming
       ? "출시 후 공식 패치노트가 연결되면 핵심 요약이 이곳에 표시됩니다."
       : "공식 패치 크롤링이 연결되면 핵심 요약이 이곳에 표시됩니다.";
-    return `<section class="home-content-panel home-patch-brief-panel"><div class="home-panel-heading"><h2>${escapeHTML(title)}</h2>${selected ? `<a href="${escapeHTML(selected.route)}">게임 허브 →</a>` : ""}</div><div class="home-section-empty compact"><strong>패치 요약 준비 중입니다.</strong><p>${escapeHTML(copy)}</p></div></section>`;
+    return `<section class="home-content-panel home-patch-brief-panel"><div class="home-panel-heading"><div><span class="home-eyebrow">TODAY'S PATCH</span><h2>${escapeHTML(title)}</h2></div>${selected ? `<a href="${escapeHTML(selected.route)}">허브 →</a>` : ""}</div><div class="home-section-empty compact"><strong>패치 요약 준비 중입니다.</strong><p>${escapeHTML(copy)}</p></div></section>`;
   }
   const summaryLines = splitSentences(aionUpdate.summary || aionUpdate.excerpt || "새 업데이트의 주요 내용을 확인해 보세요.").slice(0, 3);
+  const metaLabel = isDefaultShowcase ? `${game.name} · ${aionUpdate.date || ""}` : `${showGameName ? `${game.name} · ` : ""}${aionUpdate.date || ""}`;
   return `
     <section class="home-content-panel home-patch-brief-panel" aria-labelledby="patch-brief-heading">
       <div class="home-panel-heading">
-        <h2 id="patch-brief-heading">최신 패치 요약</h2>
-        <span class="home-panel-meta">${escapeHTML(`${showGameName ? `${game.name} · ` : ""}${aionUpdate.date || ""}`)}</span>
+        <div><span class="home-eyebrow">TODAY'S PATCH</span><h2 id="patch-brief-heading">오늘의 패치 브리핑</h2></div>
+        <span class="home-panel-meta">${escapeHTML(metaLabel)}</span>
       </div>
       <div class="patch-brief-copy">
         <a class="patch-brief-title-link" href="#/aion2/news/${encodeURIComponent(aionUpdate.id)}" data-action="record-article-view" data-id="${escapeHTML(aionUpdate.id)}"><strong>${escapeHTML(aionUpdate.title)}</strong></a>
@@ -2248,20 +2313,19 @@ app.addEventListener("click", (event) => {
     const nextGame = button.dataset.gameId || "all";
     if (state.homeGameFilter !== nextGame) {
       state.homeGameFilter = nextGame;
-      state.homeNewsCategory = "전체";
       render();
     }
   }
-  if (action === "home-news-category") {
-    const nextCategory = button.dataset.category || "전체";
-    if (state.homeNewsCategory !== nextCategory) {
-      state.homeNewsCategory = nextCategory;
+  if (action === "home-feed-tab") {
+    const nextTab = button.dataset.tab || "news";
+    if (["news", "community", "guides"].includes(nextTab) && state.homeFeedTab !== nextTab) {
+      state.homeFeedTab = nextTab;
       render();
     }
   }
   if (action === "home-community-tab") {
     const nextTab = button.dataset.tab || "popular";
-    if (["popular", "latest", "question", "guide"].includes(nextTab) && state.homeCommunityTab !== nextTab) {
+    if (["popular", "latest"].includes(nextTab) && state.homeCommunityTab !== nextTab) {
       state.homeCommunityTab = nextTab;
       render();
     }

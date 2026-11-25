@@ -338,7 +338,7 @@
     return `<div class="community-preview-list">${posts.map((post) => `<a class="community-preview-item" href="${escapeHTML(linkToPost(post))}"><span class="community-type-badge type-${escapeHTML(post.type)}">${escapeHTML(typeNames[post.type] || "게시글")}</span><span class="community-preview-title">${escapeHTML(post.title)}</span><small>${escapeHTML(gameName(post.gameId))} · ${escapeHTML(post.author?.displayName || "게스트")}</small></a>`).join("")}</div>`;
   }
 
-  function renderHomePreview({ gameIds = [], tab = "popular", limit = 4, writeGameId = "aion2", showGameName = false } = {}) {
+  function renderHomePreview({ gameIds = [], tab = "popular", limit = 6, writeGameId = "aion2", showGameName = false } = {}) {
     const allowed = new Set((gameIds || []).filter(Boolean));
     let posts = state.feedPosts.filter((post) => allowed.size && allowed.has(post.gameId));
     if (tab === "popular") {
@@ -349,23 +349,32 @@
     }
     const visible = posts.slice(0, limit);
     if (!visible.length) {
-      return `<div class="home-section-empty compact"><strong>아직 커뮤니티 글이 없어요.</strong><p>첫 질문이나 공략을 남겨 보세요.</p><a class="secondary-button home-empty-cta" href="#/community/new?gameId=${encodeURIComponent(writeGameId)}">글 작성하기 →</a></div>`;
+      return `<div class="home-hub-empty"><strong>아직 커뮤니티 글이 없어요.</strong><p>팔로우한 게임의 질문, 공략, 패치 후기를 가장 먼저 남겨 보세요.</p><a class="primary-button" href="#/community/new?gameId=${encodeURIComponent(writeGameId)}">첫 글 작성하기</a></div>`;
     }
-    return `<div class="home-community-list">${visible.map((post) => {
+    return `<div class="home-feed-grid">${visible.map((post) => {
       const likes = post.likesCount || 0;
       const comments = post.commentCount || 0;
+      const excerpt = String(post.body || "").replace(/\s+/g, " ").trim().slice(0, 90);
       const metaPrefix = showGameName ? `${gameName(post.gameId)} · ` : "";
-      return `<a class="home-community-row" href="${escapeHTML(linkToPost(post))}">
-        <div class="home-community-row-top">
+      return `<a class="home-feed-card" href="${escapeHTML(linkToPost(post))}">
+        <div class="home-feed-card-top">
           <span class="community-type-badge type-${escapeHTML(post.type)}">${escapeHTML(typeNames[post.type] || "게시글")}</span>
-          <strong class="home-community-row-title">${escapeHTML(post.title)}</strong>
+          ${post.official ? `<span class="home-feed-linked">공지 연결</span>` : ""}
+          <time>${escapeHTML(formatDate(post.createdAt))}</time>
         </div>
-        <div class="home-community-row-meta">
-          <span>${escapeHTML(`${metaPrefix}${post.author?.displayName || "게스트"} · ${formatDate(post.createdAt)}`)}</span>
+        <strong class="home-feed-card-title">${escapeHTML(post.title)}</strong>
+        ${excerpt ? `<p class="home-feed-card-excerpt">${escapeHTML(excerpt)}</p>` : ""}
+        <div class="home-feed-card-foot">
+          <span>${escapeHTML(`${metaPrefix}${post.author?.displayName || "게스트"}`)}</span>
           <span class="home-community-stats"><span>♡ ${likes}</span><span>댓글 ${comments}</span></span>
         </div>
       </a>`;
     }).join("")}</div>`;
+  }
+
+  function homeFeedCount(gameIds = []) {
+    const allowed = new Set((gameIds || []).filter(Boolean));
+    return state.feedPosts.filter((post) => allowed.size && allowed.has(post.gameId)).length;
   }
 
   async function loadSession() {
@@ -670,7 +679,7 @@
   }
 
   window.todaypatchCommunity = {
-    init, bootstrap, loadRoute, renderPage, renderAccountControl, renderPreview, renderHomePreview, renderNotificationItems, unreadNotificationCount, markAllNotificationsRead, refreshNotifications: loadNotifications,
+    init, bootstrap, loadRoute, renderPage, renderAccountControl, renderPreview, renderHomePreview, homeFeedCount, renderNotificationItems, unreadNotificationCount, markAllNotificationsRead, refreshNotifications: loadNotifications,
     hasRegisteredAccount: () => Boolean(state.user?.email),
     getPreferences: getPreferenceSnapshot, applyPreferences: (preferences) => context?.applyPreferences?.(preferences), schedulePreferenceSync,
     isAction, handleAction, handleInput, handleChange, ownsForm, handleSubmit,
