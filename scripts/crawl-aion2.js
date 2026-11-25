@@ -4,8 +4,16 @@ const path = require("node:path");
 const apiBase = "https://api-community.plaync.com/aion2";
 const dataPath = path.join(__dirname, "..", "data", "aion2.js");
 const sinceDate = process.env.AION2_CRAWL_SINCE || "2026-11-18";
-const googleAiModel = "gemma-4-31b-it";
-const googleAiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${googleAiModel}:generateContent`;
+const candidateModels = [
+  process.env.GEMINI_MODEL,
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3.8-flash",
+  "gemma-4-31b-it",
+].filter((m, i, arr) => m && arr.indexOf(m) === i);
+let activeAiModel = candidateModels[0];
+const getGoogleAiEndpoint = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 const maxSummaryBatchItems = 1;
 const maxSummaryBatchCharacters = 60000;
 const maxTransientRetries = 3;
@@ -257,7 +265,8 @@ function retryDelaySeconds(response, result, attempt) {
   return Math.min(Math.max(retryDelay || retryAfterHeader || 0, exponentialDelay), 1800);
 }
 
-async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0, qualityAttempt = 0) {
+async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0, qualityAttempt = 0, modelIndex = 0) {
+  activeAiModel = candidateModels[modelIndex] || candidateModels[0];
   const inputItems = items.map(({ id, category, title, bodyText }) => ({
     id,
     category,
@@ -343,13 +352,13 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0, qua
     contents: [{ role: "user", parts: [{ text: JSON.stringify(inputItems) }] }],
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 24000,
+      maxOutputTokens: 8192,
       responseMimeType: "application/json",
       responseJsonSchema: schema,
     },
   };
 
-  const response = await fetch(googleAiEndpoint, {
+  const response = await fetch(getGoogleAiEndpoint(activeAiModel), {
     method: "POST",
     headers,
     body: JSON.stringify(requestBody),
@@ -359,21 +368,33 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0, qua
   try {
     result = JSON.parse(responseText);
   } catch {
-    if ([429, 500, 502, 503, 504].includes(response.status) && attempt < maxTransientRetries) {
-      const retryAfterSeconds = retryDelaySeconds(response, null, attempt);
-      console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 재시도합니다(${attempt + 1}/${maxTransientRetries}).`);
-      await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
-      return summarizeBatch(items, apiKey, attempt + 1, formatAttempt, qualityAttempt);
+    if ([404, 429, 500, 502, 503, 504].includes(response.status)) {
+      if (modelIndex < candidateModels.length - 1) {
+        console.warn(`모델 ${activeAiModel} 응답 실패(HTTP ${response.status}). 대체 모델 ${candidateModels[modelIndex + 1]}로 전환합니다.`);
+        return summarizeBatch(items, apiKey, 0, formatAttempt, qualityAttempt, modelIndex + 1);
+      }
+      if (attempt < maxTransientRetries) {
+        const retryAfterSeconds = retryDelaySeconds(response, null, attempt);
+        console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 재시도합니다(${attempt + 1}/${maxTransientRetries}).`);
+        await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
+        return summarizeBatch(items, apiKey, attempt + 1, formatAttempt, qualityAttempt, modelIndex);
+      }
     }
     throw new Error(`Google AI Studio 응답을 JSON으로 읽지 못했습니다. HTTP ${response.status} ${responseText.slice(0, 500)}`);
   }
 
   if (!response.ok || result.error) {
-    if ([429, 500, 502, 503, 504].includes(response.status) && attempt < maxTransientRetries) {
-      const retryAfterSeconds = retryDelaySeconds(response, result, attempt);
-      console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 Gemma 4 31B로 재시도합니다(${attempt + 1}/${maxTransientRetries}).`);
-      await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
-      return summarizeBatch(items, apiKey, attempt + 1, formatAttempt, qualityAttempt);
+    if ([404, 429, 500, 502, 503, 504].includes(response.status)) {
+      if (modelIndex < candidateModels.length - 1) {
+        console.warn(`모델 ${activeAiModel} 오류(HTTP ${response.status}). 대체 모델 ${candidateModels[modelIndex + 1]}로 전환합니다.`);
+        return summarizeBatch(items, apiKey, 0, formatAttempt, qualityAttempt, modelIndex + 1);
+      }
+      if (attempt < maxTransientRetries) {
+        const retryAfterSeconds = retryDelaySeconds(response, result, attempt);
+        console.warn(`Google AI Studio 요청 오류(HTTP ${response.status}). ${retryAfterSeconds}초 후 재시도합니다(${attempt + 1}/${maxTransientRetries}).`);
+        await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
+        return summarizeBatch(items, apiKey, attempt + 1, formatAttempt, qualityAttempt, modelIndex);
+      }
     }
     const apiMessage = result.error?.message || responseText;
     throw new Error(`Google AI Studio 요약 요청 실패: HTTP ${response.status} ${String(apiMessage).slice(0, 500)}`);
@@ -482,7 +503,7 @@ async function summarizeBatch(items, apiKey, attempt = 0, formatAttempt = 0, qua
       keyPoints: sections.flatMap((section) => section.importantDetails),
       excerpt: makeExcerpt(analysis.summary, item.excerpt),
       summaryProvider: "google-ai-studio",
-      summaryModel: googleAiModel,
+      summaryModel: activeAiModel,
     };
   });
 }
@@ -492,7 +513,12 @@ async function summarizeWithAI(items) {
   if (!apiKey) throw new Error("GEMINI_API_KEY 환경 변수가 필요합니다. 기존 수집 데이터는 변경하지 않습니다.");
 
   const summarized = [];
-  for (const batch of createSummaryBatches(items)) {
+  const batches = createSummaryBatches(items);
+  console.log(`AI 분석 시작: 총 ${items.length}개 게시물 (${batches.length}개 배치, 모델: ${activeAiModel})`);
+  let index = 0;
+  for (const batch of batches) {
+    index++;
+    console.log(`[${index}/${batches.length}] AI 요약 진행 중: ${batch.map((b) => b.title.slice(0, 30)).join(", ")}...`);
     summarized.push(...await summarizeBatch(batch, apiKey));
   }
   return summarized;
