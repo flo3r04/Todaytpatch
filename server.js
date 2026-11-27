@@ -14,6 +14,9 @@ const sessionCookie = "todaypatch_session";
 const scryptAsync = promisify(scrypt);
 const categoryIds = new Set(["free", "info", "guide", "question", "discussion"]);
 const categoryNames = { free: "자유게시판", info: "정보", guide: "공략", question: "질문", discussion: "토론" };
+const feedbackCategories = new Set(["bug", "feature", "ui", "game", "ai", "other"]);
+const feedbackStatuses = new Set(["received", "reviewing", "done"]);
+const warningWindowMs = 90 * 24 * 60 * 60 * 1000;
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -22,7 +25,7 @@ const mimeTypes = {
   ".svg": "image/svg+xml",
 };
 
-let communityStore = { accounts: [], sessions: {}, posts: [], comments: [], reports: [], notifications: [], preferences: {}, authFailures: {} };
+let communityStore = { accounts: [], sessions: {}, posts: [], comments: [], reports: [], warnings: [], feedback: [], notifications: [], preferences: {}, authFailures: {} };
 let persistQueue = Promise.resolve();
 let dummyPasswordHashPromise;
 
@@ -34,6 +37,8 @@ function normalizeStore(value) {
     posts: Array.isArray(value.posts) ? value.posts : [],
     comments: Array.isArray(value.comments) ? value.comments : [],
     reports: Array.isArray(value.reports) ? value.reports : [],
+    warnings: Array.isArray(value.warnings) ? value.warnings : [],
+    feedback: Array.isArray(value.feedback) ? value.feedback : [],
     notifications: Array.isArray(value.notifications) ? value.notifications : [],
     preferences: value.preferences && typeof value.preferences === "object" && !Array.isArray(value.preferences) ? value.preferences : {},
     authFailures: value.authFailures && typeof value.authFailures === "object" && !Array.isArray(value.authFailures) ? value.authFailures : {},
@@ -89,8 +94,76 @@ function currentAccount(request) {
   return communityStore.accounts.find((account) => account.id === accountId) || null;
 }
 
+function suspensionDaysForWarnings(count) {
+  if (count >= 4) return 30;
+  if (count === 3) return 7;
+  if (count === 2) return 1;
+  return 0;
+}
+
+function formatKstDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function activeSuspensionIso(value) {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) && ms > Date.now() ? new Date(ms).toISOString() : null;
+}
+
+function activeWarningsFor(accountId) {
+  const cutoff = Date.now() - warningWindowMs;
+  return communityStore.warnings
+    .filter((item) => item.accountId === accountId && !item.revokedAt && Date.parse(item.createdAt) > cutoff)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function recalculateAccountStanding(accountId) {
+  const account = communityStore.accounts.find((item) => item.id === accountId);
+  const active = activeWarningsFor(accountId);
+  const count = active.length;
+  const days = suspensionDaysForWarnings(count);
+  let suspendedUntil = null;
+  if (days > 0 && active[0]?.createdAt) {
+    const untilMs = Date.parse(active[0].createdAt) + days * 24 * 60 * 60 * 1000;
+    if (untilMs > Date.now()) suspendedUntil = new Date(untilMs).toISOString();
+  }
+  if (account) account.suspendedUntil = suspendedUntil;
+  return { warningCount: count, suspendedUntil, penaltyDays: days };
+}
+
+function checkSuspended(account, response) {
+  const until = activeSuspensionIso(account?.suspendedUntil);
+  if (!until) return false;
+  sendError(response, 403, `경고 누적으로 커뮤니티 글·댓글 작성이 제한되었습니다. 해제 예정: ${formatKstDateTime(until)}`);
+  return true;
+}
+
+function clientHashForRequest(request) {
+  const forwarded = String(request.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const raw = forwarded || request.socket?.remoteAddress || "unknown";
+  return createHash("sha256").update(raw).digest("hex");
+}
+
 function publicAccount(account) {
-  return account ? { id: account.id, displayName: account.displayName, createdAt: account.createdAt, email: account.email || null } : null;
+  return account ? {
+    id: account.id,
+    displayName: account.displayName,
+    createdAt: account.createdAt,
+    email: account.email || null,
+    warningCount: activeWarningsFor(account.id).length,
+    suspendedUntil: activeSuspensionIso(account.suspendedUntil),
+  } : null;
 }
 
 function normalizeEmail(value) {
@@ -430,6 +503,175 @@ async function handleApi(request, response, requestUrl) {
     });
     return;
   }
+  if (pathname === "/api/community/account" && method === "PATCH") {
+    if (!account) {
+      sendError(response, 401, "로그인이 필요합니다.");
+      return;
+    }
+    const input = await readJson(request);
+    const hasDisplayName = typeof input.displayName === "string";
+    const hasEmail = typeof input.email === "string";
+    if (!hasDisplayName && !hasEmail) {
+      sendError(response, 400, "변경할 항목을 입력해 주세요.");
+      return;
+    }
+    let nextDisplayName = account.displayName;
+    if (hasDisplayName) {
+      nextDisplayName = safeText(input.displayName, 24);
+      if (Array.from(nextDisplayName).length < 2) {
+        sendError(response, 400, "닉네임은 2자 이상 24자 이하로 입력해 주세요.");
+        return;
+      }
+    }
+    let nextEmail = account.email || null;
+    if (hasEmail) {
+      const normalized = normalizeEmail(input.email);
+      if (!validEmail(normalized)) {
+        sendError(response, 400, "올바른 이메일 주소를 입력해 주세요.");
+        return;
+      }
+      const emailChanged = normalized !== (account.email || "").toLowerCase();
+      if (emailChanged) {
+        if (account.passwordHash) {
+          const currentPassword = typeof input.currentPassword === "string" ? input.currentPassword : "";
+          if (!currentPassword || !(await verifyPassword(currentPassword, account.passwordHash))) {
+            sendError(response, 401, "이메일을 변경하려면 현재 비밀번호를 정확히 입력해 주세요.");
+            return;
+          }
+        }
+        if (communityStore.accounts.some((item) => item.id !== account.id && item.email && item.email.toLowerCase() === normalized)) {
+          sendError(response, 409, "이미 사용 중인 이메일 주소입니다.");
+          return;
+        }
+        nextEmail = normalized;
+      }
+    }
+    account.displayName = nextDisplayName;
+    if (nextEmail) account.email = nextEmail;
+    await persistCommunityStore();
+    sendJson(response, 200, { user: publicAccount(account) });
+    return;
+  }
+
+  if (pathname === "/api/community/account/password" && method === "PATCH") {
+    if (!account) {
+      sendError(response, 401, "로그인이 필요합니다.");
+      return;
+    }
+    if (!account.email || !account.passwordHash) {
+      sendError(response, 400, "이메일 계정을 먼저 연결한 뒤 비밀번호를 변경할 수 있습니다.");
+      return;
+    }
+    const input = await readJson(request);
+    const currentPassword = typeof input.currentPassword === "string" ? input.currentPassword : "";
+    const newPassword = input.newPassword;
+    if (!currentPassword || !(await verifyPassword(currentPassword, account.passwordHash))) {
+      sendError(response, 401, "현재 비밀번호가 올바르지 않습니다.");
+      return;
+    }
+    if (!validPassword(newPassword)) {
+      sendError(response, 400, "새 비밀번호는 10자 이상 128자 이하로 입력해 주세요.");
+      return;
+    }
+    account.passwordHash = await hashPassword(newPassword);
+    await persistCommunityStore();
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (pathname === "/api/community/account/warnings" && method === "GET") {
+    if (!account) {
+      sendError(response, 401, "로그인이 필요합니다.");
+      return;
+    }
+    const warnings = communityStore.warnings
+      .filter((item) => item.accountId === account.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 30)
+      .map((item) => ({
+        id: item.id,
+        postId: item.postId,
+        postTitle: findPost(item.postId)?.title || "삭제된 게시글",
+        reason: item.reason,
+        note: item.note || "",
+        createdAt: item.createdAt,
+        revokedAt: item.revokedAt || null,
+      }));
+    sendJson(response, 200, {
+      warningCount: activeWarningsFor(account.id).length,
+      suspendedUntil: activeSuspensionIso(account.suspendedUntil),
+      warnings,
+    });
+    return;
+  }
+
+  if (pathname === "/api/community/feedback" && method === "POST") {
+    const input = await readJson(request);
+    const category = feedbackCategories.has(input.category) ? input.category : "other";
+    const title = safeText(input.title, 100);
+    const body = safeText(input.body, 2000);
+    const contact = safeText(input.contact, 120);
+    const pageContext = safeText(input.pageContext, 120);
+    if (Array.from(title).length < 2) {
+      sendError(response, 400, "제목을 2자 이상 입력해 주세요.");
+      return;
+    }
+    if (Array.from(body).length < 5) {
+      sendError(response, 400, "불편한 점이나 건의 내용을 5자 이상 자세히 적어 주세요.");
+      return;
+    }
+    const clientHash = clientHashForRequest(request);
+    const windowStart = Date.now() - 10 * 60 * 1000;
+    const recentCount = communityStore.feedback.filter((item) => Date.parse(item.createdAt) > windowStart
+      && (account ? item.accountId === account.id : item.clientHash === clientHash)).length;
+    if (recentCount >= 5) {
+      sendError(response, 429, "건의 접수가 잠시 제한되었습니다. 10분 후 다시 시도해 주세요.");
+      return;
+    }
+    const entry = {
+      id: randomUUID(),
+      accountId: account?.id || null,
+      category,
+      title,
+      body,
+      contact: contact || account?.email || "",
+      pageContext,
+      clientHash,
+      status: "received",
+      adminNote: "",
+      createdAt: new Date().toISOString(),
+      updatedAt: null,
+    };
+    communityStore.feedback.unshift(entry);
+    await persistCommunityStore();
+    sendJson(response, 201, {
+      feedback: {
+        id: entry.id, category: entry.category, title: entry.title, body: entry.body, contact: entry.contact,
+        pageContext: entry.pageContext, status: entry.status, adminNote: entry.adminNote,
+        createdAt: entry.createdAt, updatedAt: entry.updatedAt,
+      },
+    });
+    return;
+  }
+
+  if (pathname === "/api/community/feedback/mine" && method === "GET") {
+    if (!account) {
+      sendJson(response, 200, { items: [] });
+      return;
+    }
+    const items = communityStore.feedback
+      .filter((item) => item.accountId === account.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 50)
+      .map((item) => ({
+        id: item.id, category: item.category, title: item.title, body: item.body, contact: item.contact,
+        pageContext: item.pageContext, status: item.status, adminNote: item.adminNote || "",
+        createdAt: item.createdAt, updatedAt: item.updatedAt || null,
+      }));
+    sendJson(response, 200, { items });
+    return;
+  }
+
   if (pathname === "/api/community/notifications" && method === "GET") {
     if (!account) {
       sendError(response, 401, "로그인이 필요합니다.");
@@ -507,7 +749,7 @@ async function handleApi(request, response, requestUrl) {
       && (!type || post.type === type)
       && (!query || `${post.title} ${post.body} ${(post.tags || []).join(" ")} ${categoryNames[post.type] || ""}`.toLocaleLowerCase("ko-KR").includes(query)));
     posts.sort((a, b) => sort === "popular"
-      ? ((b.likes?.length || 0) + commentCount(b.id) * 2) - ((a.likes?.length || 0) + commentCount(a.id) * 2) || b.createdAt.localeCompare(a.createdAt)
+      ? (b.likes?.length || 0) - (a.likes?.length || 0) || commentCount(b.id) - commentCount(a.id) || b.createdAt.localeCompare(a.createdAt)
       : b.createdAt.localeCompare(a.createdAt));
     sendJson(response, 200, { posts: posts.slice(0, 300).map((post) => publicPost(post, account)) });
     return;
@@ -515,6 +757,7 @@ async function handleApi(request, response, requestUrl) {
   if (pathname === "/api/community/posts" && method === "POST") {
     const author = requireAccount(request, response);
     if (!author) return;
+    if (checkSuspended(author, response)) return;
     if (postRateLimited(author.id)) {
       sendError(response, 429, "글 작성이 잠시 제한되었습니다. 10분 후 다시 작성해 주세요.");
       return;
@@ -579,6 +822,7 @@ async function handleApi(request, response, requestUrl) {
   if (commentCollection && method === "POST") {
     const author = requireAccount(request, response);
     if (!author) return;
+    if (checkSuspended(author, response)) return;
     const post = findPost(decodeURIComponent(commentCollection[1]));
     if (!post || post.deletedAt || post.hidden) {
       sendError(response, 404, "게시글을 찾을 수 없습니다.");
@@ -665,8 +909,22 @@ async function handleApi(request, response, requestUrl) {
       sendError(response, 404, "게시글을 찾을 수 없습니다.");
       return;
     }
+    if (post.authorId === reporter.id) {
+      sendError(response, 400, "본인이 작성한 게시글은 신고할 수 없습니다.");
+      return;
+    }
     if (communityStore.reports.some((item) => item.postId === post.id && item.reporterId === reporter.id && !item.reviewedAt)) {
       sendError(response, 409, "이미 이 게시글을 신고했습니다.");
+      return;
+    }
+    if (communityStore.reports.some((item) => item.postId === post.id && item.reporterId === reporter.id && item.decision === "keep")) {
+      sendError(response, 409, "운영자가 이미 문제없음으로 확인한 게시글입니다.");
+      return;
+    }
+    const hourAgo = Date.now() - 60 * 60 * 1000;
+    const hourlyCount = communityStore.reports.filter((item) => item.reporterId === reporter.id && Date.parse(item.createdAt) > hourAgo).length;
+    if (hourlyCount >= 5) {
+      sendError(response, 429, "신고 요청이 너무 많습니다. 1시간 후 다시 시도해 주세요.");
       return;
     }
     const input = await readJson(request);
@@ -686,12 +944,22 @@ async function handleApi(request, response, requestUrl) {
     }
     const reports = communityStore.reports.map((report) => {
       const post = findPost(report.postId);
+      const postAuthorAccount = post ? communityStore.accounts.find((item) => item.id === post.authorId) : null;
+      const postReportCount = communityStore.reports.filter((item) => item.postId === report.postId).length;
       return {
         ...report,
+        postReportCount,
         reporter: authorFor(report.reporterId),
         post: post ? {
           id: post.id, title: post.title, body: post.body, gameId: post.gameId,
-          type: post.type, author: authorFor(post.authorId), hidden: Boolean(post.hidden),
+          type: post.type,
+          author: {
+            ...authorFor(post.authorId),
+            warningCount: postAuthorAccount ? activeWarningsFor(postAuthorAccount.id).length : 0,
+            suspendedUntil: activeSuspensionIso(postAuthorAccount?.suspendedUntil),
+          },
+          hidden: Boolean(post.hidden),
+          hasActiveWarning: communityStore.warnings.some((item) => item.postId === post.id && !item.revokedAt),
         } : null,
       };
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -705,19 +973,140 @@ async function handleApi(request, response, requestUrl) {
       return;
     }
     const input = await readJson(request);
-    if (!["hide", "keep", "restore"].includes(input.decision)) {
+    if (!["hide", "keep", "warn", "restore"].includes(input.decision)) {
       sendError(response, 400, "처리 방법을 선택해 주세요.");
       return;
     }
+    const note = safeText(input.note, 300);
     const report = communityStore.reports.find((item) => item.id === decodeURIComponent(moderationMatch[1]));
     if (!report) {
       sendError(response, 404, "신고를 찾을 수 없습니다.");
       return;
     }
     const post = findPost(report.postId);
-    if (post && input.decision !== "keep") post.hidden = input.decision === "hide";
-    report.reviewedAt = new Date().toISOString();
+    let standing = null;
+    if (post) {
+      if (input.decision === "hide" || input.decision === "warn") post.hidden = true;
+      else if (input.decision === "restore") post.hidden = false;
+
+      if (input.decision === "warn" && post.authorId) {
+        const existingWarn = communityStore.warnings.find((item) => item.accountId === post.authorId && item.postId === post.id && !item.revokedAt);
+        if (!existingWarn) {
+          communityStore.warnings.push({
+            id: randomUUID(),
+            accountId: post.authorId,
+            postId: post.id,
+            reportId: report.id,
+            reason: report.reason || "other",
+            note,
+            createdAt: new Date().toISOString(),
+            revokedAt: null,
+          });
+        }
+        standing = recalculateAccountStanding(post.authorId);
+        if (!existingWarn) {
+          const penaltyMsg = standing.suspendedUntil
+            ? `최근 90일 경고 ${standing.warningCount}회 누적으로 ${formatKstDateTime(standing.suspendedUntil)}까지 글·댓글 작성이 제한됩니다.`
+            : `최근 90일 경고 ${standing.warningCount}회 (1회 경고는 주의 안내이며 글쓰기 제한은 적용되지 않습니다).`;
+          addCommunityNotification(
+            post.authorId,
+            "warning",
+            post,
+            { id: "__admin__", displayName: "운영팀" },
+            `${note ? `${note} · ` : ""}${penaltyMsg}`,
+            "운영자 검토 결과 경고가 부여되었습니다.",
+          );
+        }
+      } else if (input.decision === "restore" && post.authorId) {
+        const nowIso = new Date().toISOString();
+        communityStore.warnings.forEach((item) => {
+          if (item.accountId === post.authorId && item.postId === post.id && !item.revokedAt) item.revokedAt = nowIso;
+        });
+        standing = recalculateAccountStanding(post.authorId);
+      }
+    }
+    const reviewedIso = new Date().toISOString();
+    report.reviewedAt = reviewedIso;
     report.decision = input.decision;
+    if (input.decision !== "keep") {
+      communityStore.reports.forEach((item) => {
+        if (item.postId === report.postId && !item.reviewedAt) {
+          item.reviewedAt = reviewedIso;
+          item.decision = input.decision;
+        }
+      });
+    }
+    await persistCommunityStore();
+    sendJson(response, 200, { ok: true, standing });
+    return;
+  }
+
+  const unsuspendMatch = pathname.match(/^\/api\/community\/admin\/accounts\/([^/]+)\/unsuspend$/);
+  if (unsuspendMatch && method === "POST") {
+    if (!isAdmin(request)) {
+      sendError(response, process.env.TODAYPATCH_ADMIN_TOKEN ? 403 : 503, process.env.TODAYPATCH_ADMIN_TOKEN ? "운영자 권한이 없습니다." : "운영자 검토 기능은 서버에 TODAYPATCH_ADMIN_TOKEN을 설정한 뒤 사용할 수 있습니다.");
+      return;
+    }
+    const target = communityStore.accounts.find((item) => item.id === decodeURIComponent(unsuspendMatch[1]));
+    if (!target) {
+      sendError(response, 404, "계정을 찾을 수 없습니다.");
+      return;
+    }
+    target.suspendedUntil = null;
+    await persistCommunityStore();
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (pathname === "/api/community/admin/feedback" && method === "GET") {
+    if (!isAdmin(request)) {
+      sendError(response, process.env.TODAYPATCH_ADMIN_TOKEN ? 403 : 503, process.env.TODAYPATCH_ADMIN_TOKEN ? "운영자 권한이 없습니다." : "운영자 검토 기능은 서버에 TODAYPATCH_ADMIN_TOKEN을 설정한 뒤 사용할 수 있습니다.");
+      return;
+    }
+    const items = communityStore.feedback
+      .slice()
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 200)
+      .map((item) => {
+        const authorAccount = item.accountId ? communityStore.accounts.find((acc) => acc.id === item.accountId) : null;
+        return {
+          id: item.id,
+          category: item.category,
+          title: item.title,
+          body: item.body,
+          contact: item.contact || "",
+          pageContext: item.pageContext || "",
+          status: item.status || "received",
+          adminNote: item.adminNote || "",
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt || null,
+          author: authorAccount ? { id: authorAccount.id, displayName: authorAccount.displayName, email: authorAccount.email || "" } : null,
+        };
+      });
+    sendJson(response, 200, { items });
+    return;
+  }
+
+  const adminFeedbackMatch = pathname.match(/^\/api\/community\/admin\/feedback\/([^/]+)$/);
+  if (adminFeedbackMatch && method === "PATCH") {
+    if (!isAdmin(request)) {
+      sendError(response, process.env.TODAYPATCH_ADMIN_TOKEN ? 403 : 503, process.env.TODAYPATCH_ADMIN_TOKEN ? "운영자 권한이 없습니다." : "운영자 검토 기능은 서버에 TODAYPATCH_ADMIN_TOKEN을 설정한 뒤 사용할 수 있습니다.");
+      return;
+    }
+    const input = await readJson(request);
+    const status = feedbackStatuses.has(input.status) ? input.status : null;
+    if (!status) {
+      sendError(response, 400, "처리 상태를 선택해 주세요.");
+      return;
+    }
+    const entry = communityStore.feedback.find((item) => item.id === decodeURIComponent(adminFeedbackMatch[1]));
+    if (!entry) {
+      sendError(response, 404, "건의 내역을 찾을 수 없습니다.");
+      return;
+    }
+    entry.status = status;
+    entry.adminNote = safeText(input.adminNote, 500);
+    entry.updatedAt = new Date().toISOString();
     await persistCommunityStore();
     sendJson(response, 200, { ok: true });
     return;

@@ -6,6 +6,9 @@ const { sanitizePreferences } = require("../user-preferences");
 const sessionCookie = "todaypatch_session";
 const categories = new Set(["free", "info", "guide", "question", "discussion"]);
 const reportReasons = new Set(["spam", "abuse", "privacy", "copyright", "other"]);
+const feedbackCategories = new Set(["bug", "feature", "ui", "game", "ai", "other"]);
+const feedbackStatuses = new Set(["received", "reviewing", "done"]);
+const warningWindowDays = 90;
 const scryptAsync = promisify(scrypt);
 const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.NEON_DATABASE_URL;
 
@@ -32,6 +35,7 @@ async function ensureSchema() {
       )`);
       await pool.query("ALTER TABLE community_accounts ADD COLUMN IF NOT EXISTS email text");
       await pool.query("ALTER TABLE community_accounts ADD COLUMN IF NOT EXISTS password_hash text");
+      await pool.query("ALTER TABLE community_accounts ADD COLUMN IF NOT EXISTS suspended_until timestamptz");
       await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS community_accounts_email_unique ON community_accounts (lower(email)) WHERE email IS NOT NULL");
       await pool.query(`CREATE TABLE IF NOT EXISTS community_sessions (
         token_hash char(64) PRIMARY KEY,
@@ -90,7 +94,7 @@ async function ensureSchema() {
       await pool.query(`CREATE TABLE IF NOT EXISTS community_notifications (
         id uuid PRIMARY KEY,
         account_id uuid NOT NULL REFERENCES community_accounts(id),
-        kind varchar(16) NOT NULL CHECK (kind IN ('comment', 'like')),
+        kind varchar(16) NOT NULL CHECK (kind IN ('comment', 'like', 'warning')),
         post_id uuid NOT NULL REFERENCES community_posts(id),
         game_id varchar(80) NOT NULL,
         title varchar(100) NOT NULL,
@@ -99,6 +103,36 @@ async function ensureSchema() {
         created_at timestamptz NOT NULL DEFAULT now(),
         read_at timestamptz
       )`);
+      await pool.query("ALTER TABLE community_notifications DROP CONSTRAINT IF EXISTS community_notifications_kind_check");
+      await pool.query("ALTER TABLE community_notifications ADD CONSTRAINT community_notifications_kind_check CHECK (kind IN ('comment', 'like', 'warning'))");
+      await pool.query(`CREATE TABLE IF NOT EXISTS community_warnings (
+        id uuid PRIMARY KEY,
+        account_id uuid NOT NULL REFERENCES community_accounts(id) ON DELETE CASCADE,
+        post_id uuid NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+        report_id uuid REFERENCES community_reports(id) ON DELETE SET NULL,
+        reason varchar(24) NOT NULL DEFAULT 'other',
+        note varchar(300) NOT NULL DEFAULT '',
+        created_at timestamptz NOT NULL DEFAULT now(),
+        revoked_at timestamptz
+      )`);
+      await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS community_warnings_active_post_unique ON community_warnings (account_id, post_id) WHERE revoked_at IS NULL");
+      await pool.query("CREATE INDEX IF NOT EXISTS community_warnings_account_idx ON community_warnings (account_id, created_at DESC)");
+      await pool.query(`CREATE TABLE IF NOT EXISTS community_feedback (
+        id uuid PRIMARY KEY,
+        account_id uuid REFERENCES community_accounts(id) ON DELETE SET NULL,
+        category varchar(24) NOT NULL,
+        title varchar(100) NOT NULL,
+        body varchar(2000) NOT NULL,
+        contact varchar(120) NOT NULL DEFAULT '',
+        page_context varchar(120) NOT NULL DEFAULT '',
+        client_hash char(64) NOT NULL DEFAULT '',
+        status varchar(20) NOT NULL DEFAULT 'received',
+        admin_note varchar(500) NOT NULL DEFAULT '',
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz
+      )`);
+      await pool.query("CREATE INDEX IF NOT EXISTS community_feedback_account_idx ON community_feedback (account_id, created_at DESC)");
+      await pool.query("CREATE INDEX IF NOT EXISTS community_feedback_created_idx ON community_feedback (created_at DESC)");
       await pool.query(`CREATE TABLE IF NOT EXISTS community_auth_attempts (
         email_hash char(64) PRIMARY KEY,
         attempts integer NOT NULL DEFAULT 0,
@@ -149,8 +183,64 @@ function safeText(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
+function suspensionDaysForWarnings(count) {
+  if (count >= 4) return 30;
+  if (count === 3) return 7;
+  if (count === 2) return 1;
+  return 0;
+}
+
+function formatKstDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function activeSuspensionIso(value) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) && ms > Date.now() ? new Date(ms).toISOString() : null;
+}
+
 function publicAccount(account) {
-  return account ? { id: account.id, displayName: account.display_name, createdAt: account.created_at, email: account.email || null } : null;
+  return account ? {
+    id: account.id,
+    displayName: account.display_name,
+    createdAt: asIso(account.created_at),
+    email: account.email || null,
+    warningCount: Number(account.warning_count || 0),
+    suspendedUntil: activeSuspensionIso(account.suspended_until),
+  } : null;
+}
+
+async function recalculateAccountStanding(client, accountId) {
+  const result = await client.query(`SELECT created_at FROM community_warnings
+    WHERE account_id = $1 AND revoked_at IS NULL AND created_at > now() - ($2::text || ' days')::interval
+    ORDER BY created_at DESC`, [accountId, warningWindowDays]);
+  const count = result.rowCount;
+  const days = suspensionDaysForWarnings(count);
+  let suspendedUntil = null;
+  if (days > 0 && result.rows[0]?.created_at) {
+    const untilMs = new Date(result.rows[0].created_at).getTime() + days * 24 * 60 * 60 * 1000;
+    if (untilMs > Date.now()) suspendedUntil = new Date(untilMs).toISOString();
+  }
+  await client.query("UPDATE community_accounts SET suspended_until = $1 WHERE id = $2", [suspendedUntil, accountId]);
+  return { warningCount: count, suspendedUntil, penaltyDays: days };
+}
+
+function checkSuspended(account, res) {
+  const until = activeSuspensionIso(account?.suspended_until);
+  if (!until) return false;
+  error(res, 403, `경고 누적으로 커뮤니티 글·댓글 작성이 제한되었습니다. 해제 예정: ${formatKstDateTime(until)}`);
+  return true;
 }
 
 function normalizeEmail(value) {
@@ -289,10 +379,24 @@ function validatePost(input) {
 async function accountForRequest(req) {
   const token = parseCookies(req.headers.cookie)[sessionCookie];
   if (!token) return null;
-  const result = await pool.query(`SELECT a.id, a.display_name, a.created_at, a.email
+  const result = await pool.query(`SELECT a.id, a.display_name, a.created_at, a.email, a.password_hash, a.suspended_until,
+    (SELECT count(*)::int FROM community_warnings w WHERE w.account_id = a.id AND w.revoked_at IS NULL AND w.created_at > now() - ($2::text || ' days')::interval) AS warning_count
     FROM community_sessions s JOIN community_accounts a ON a.id = s.account_id
-    WHERE s.token_hash = $1 AND s.expires_at > now()`, [hashToken(token)]);
+    WHERE s.token_hash = $1 AND s.expires_at > now()`, [hashToken(token), warningWindowDays]);
   return result.rows[0] || null;
+}
+
+async function loadAccountById(id) {
+  const result = await pool.query(`SELECT a.id, a.display_name, a.created_at, a.email, a.password_hash, a.suspended_until,
+    (SELECT count(*)::int FROM community_warnings w WHERE w.account_id = a.id AND w.revoked_at IS NULL AND w.created_at > now() - ($2::text || ' days')::interval) AS warning_count
+    FROM community_accounts a WHERE a.id = $1`, [id, warningWindowDays]);
+  return result.rows[0] || null;
+}
+
+function clientHashForRequest(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const raw = forwarded || req.socket?.remoteAddress || "unknown";
+  return createHash("sha256").update(raw).digest("hex");
 }
 
 function requireAccount(account, res) {
@@ -459,7 +563,9 @@ async function dispatch(req, res, route, account) {
       return error(res, 400, "이메일과 비밀번호를 확인해 주세요.");
     }
     if (await isAuthLocked(email)) return error(res, 429, "로그인 시도가 너무 많습니다. 15분 뒤 다시 시도해 주세요.");
-    const result = await pool.query("SELECT id, display_name, email, password_hash, created_at FROM community_accounts WHERE lower(email)=$1 LIMIT 1", [email]);
+    const result = await pool.query(`SELECT a.id, a.display_name, a.email, a.password_hash, a.created_at, a.suspended_until,
+      (SELECT count(*)::int FROM community_warnings w WHERE w.account_id = a.id AND w.revoked_at IS NULL AND w.created_at > now() - ($2::text || ' days')::interval) AS warning_count
+      FROM community_accounts a WHERE lower(a.email)=$1 LIMIT 1`, [email, warningWindowDays]);
     const found = result.rows[0];
     if (!dummyPasswordHashPromise) dummyPasswordHashPromise = hashPassword(randomUUID());
     const passwordValid = found?.password_hash
@@ -511,6 +617,138 @@ async function dispatch(req, res, route, account) {
     return;
   }
 
+  if (path === "/account" && method === "PATCH") {
+    if (!requireAccount(account, res)) return;
+    const input = await readJson(req);
+    const hasDisplayName = typeof input.displayName === "string";
+    const hasEmail = typeof input.email === "string";
+    if (!hasDisplayName && !hasEmail) return error(res, 400, "변경할 항목을 입력해 주세요.");
+
+    let nextDisplayName = account.display_name;
+    if (hasDisplayName) {
+      nextDisplayName = safeText(input.displayName, 24);
+      if (Array.from(nextDisplayName).length < 2) return error(res, 400, "닉네임은 2자 이상 24자 이하로 입력해 주세요.");
+    }
+
+    let nextEmail = account.email || null;
+    if (hasEmail) {
+      const normalized = normalizeEmail(input.email);
+      if (!validateEmail(normalized)) return error(res, 400, "올바른 이메일 주소를 입력해 주세요.");
+      const emailChanged = normalized !== (account.email || "").toLowerCase();
+      if (emailChanged) {
+        if (account.password_hash) {
+          const currentPassword = typeof input.currentPassword === "string" ? input.currentPassword : "";
+          if (!currentPassword || !(await verifyPassword(currentPassword, account.password_hash))) {
+            return error(res, 401, "이메일을 변경하려면 현재 비밀번호를 정확히 입력해 주세요.");
+          }
+        }
+        nextEmail = normalized;
+      }
+    }
+
+    try {
+      await pool.query("UPDATE community_accounts SET display_name=$1, email=$2 WHERE id=$3", [nextDisplayName, nextEmail, account.id]);
+    } catch (cause) {
+      if (cause.code === "23505") return error(res, 409, "이미 사용 중인 이메일 주소입니다.");
+      throw cause;
+    }
+    const updated = await loadAccountById(account.id);
+    json(res, 200, { user: publicAccount(updated) });
+    return;
+  }
+
+  if (path === "/account/password" && method === "PATCH") {
+    if (!requireAccount(account, res)) return;
+    if (!account.email || !account.password_hash) {
+      return error(res, 400, "이메일 계정을 먼저 연결한 뒤 비밀번호를 변경할 수 있습니다.");
+    }
+    const input = await readJson(req);
+    const currentPassword = typeof input.currentPassword === "string" ? input.currentPassword : "";
+    const newPassword = input.newPassword;
+    if (!currentPassword || !(await verifyPassword(currentPassword, account.password_hash))) {
+      return error(res, 401, "현재 비밀번호가 올바르지 않습니다.");
+    }
+    if (!validatePassword(newPassword)) {
+      return error(res, 400, "새 비밀번호는 10자 이상 128자 이하로 입력해 주세요.");
+    }
+    const passwordHash = await hashPassword(newPassword);
+    await pool.query("UPDATE community_accounts SET password_hash=$1 WHERE id=$2", [passwordHash, account.id]);
+    json(res, 200, { ok: true });
+    return;
+  }
+
+  if (path === "/account/warnings" && method === "GET") {
+    if (!requireAccount(account, res)) return;
+    const result = await pool.query(`SELECT w.id, w.post_id, w.reason, w.note, w.created_at, w.revoked_at, p.title AS post_title
+      FROM community_warnings w
+      LEFT JOIN community_posts p ON p.id = w.post_id
+      WHERE w.account_id = $1
+      ORDER BY w.created_at DESC
+      LIMIT 30`, [account.id]);
+    json(res, 200, {
+      warningCount: Number(account.warning_count || 0),
+      suspendedUntil: activeSuspensionIso(account.suspended_until),
+      warnings: result.rows.map((row) => ({
+        id: row.id,
+        postId: row.post_id,
+        postTitle: row.post_title || "삭제된 게시글",
+        reason: row.reason,
+        note: row.note || "",
+        createdAt: asIso(row.created_at),
+        revokedAt: asIso(row.revoked_at),
+      })),
+    });
+    return;
+  }
+
+  if (path === "/feedback" && method === "POST") {
+    const input = await readJson(req);
+    const category = feedbackCategories.has(input.category) ? input.category : "other";
+    const title = safeText(input.title, 100);
+    const body = safeText(input.body, 2000);
+    const contact = safeText(input.contact, 120);
+    const pageContext = safeText(input.pageContext, 120);
+    if (Array.from(title).length < 2) return error(res, 400, "제목을 2자 이상 입력해 주세요.");
+    if (Array.from(body).length < 5) return error(res, 400, "불편한 점이나 건의 내용을 5자 이상 자세히 적어 주세요.");
+    const clientHash = clientHashForRequest(req);
+    const recent = account
+      ? await pool.query("SELECT count(*)::int AS count FROM community_feedback WHERE account_id=$1 AND created_at > now() - interval '10 minutes'", [account.id])
+      : await pool.query("SELECT count(*)::int AS count FROM community_feedback WHERE client_hash=$1 AND created_at > now() - interval '10 minutes'", [clientHash]);
+    if (Number(recent.rows[0]?.count || 0) >= 5) {
+      return error(res, 429, "건의 접수가 잠시 제한되었습니다. 10분 후 다시 시도해 주세요.");
+    }
+    const id = randomUUID();
+    const inserted = await pool.query(`INSERT INTO community_feedback (id, account_id, category, title, body, contact, page_context, client_hash)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, category, title, body, contact, page_context, status, admin_note, created_at, updated_at`,
+    [id, account?.id || null, category, title, body, contact || account?.email || "", pageContext, clientHash]);
+    const row = inserted.rows[0];
+    json(res, 201, {
+      feedback: {
+        id: row.id, category: row.category, title: row.title, body: row.body, contact: row.contact,
+        pageContext: row.page_context, status: row.status, adminNote: row.admin_note,
+        createdAt: asIso(row.created_at), updatedAt: asIso(row.updated_at),
+      },
+    });
+    return;
+  }
+
+  if (path === "/feedback/mine" && method === "GET") {
+    if (!account) {
+      json(res, 200, { items: [] });
+      return;
+    }
+    const result = await pool.query(`SELECT id, category, title, body, contact, page_context, status, admin_note, created_at, updated_at
+      FROM community_feedback WHERE account_id=$1 ORDER BY created_at DESC LIMIT 50`, [account.id]);
+    json(res, 200, {
+      items: result.rows.map((row) => ({
+        id: row.id, category: row.category, title: row.title, body: row.body, contact: row.contact,
+        pageContext: row.page_context, status: row.status, adminNote: row.admin_note,
+        createdAt: asIso(row.created_at), updatedAt: asIso(row.updated_at),
+      })),
+    });
+    return;
+  }
+
   if (path === "/notifications" && method === "GET") {
     if (!requireAccount(account, res)) return;
     const result = await pool.query(`SELECT id, kind, post_id, game_id, title, body, actor_name, created_at, read_at
@@ -549,7 +787,7 @@ async function dispatch(req, res, route, account) {
         AND ($2 = '' OR p.game_id = $2)
         AND ($3 = '' OR p.type = $3)
         AND ($4 = '' OR concat_ws(' ', p.title, p.body, array_to_string(p.tags, ' '), CASE p.type WHEN 'free' THEN '자유게시판' WHEN 'info' THEN '정보' WHEN 'guide' THEN '공략' WHEN 'question' THEN '질문' WHEN 'discussion' THEN '토론' END) ILIKE '%' || $4 || '%')
-      ORDER BY ${sort === "popular" ? "(COALESCE(l.like_count, 0) + 2 * COALESCE(c.comment_count, 0)) DESC, p.created_at DESC" : "p.created_at DESC"}
+      ORDER BY ${sort === "popular" ? "COALESCE(l.like_count, 0) DESC, COALESCE(c.comment_count, 0) DESC, p.created_at DESC" : "p.created_at DESC"}
       LIMIT 300`, [account?.id || null, gameId, type, query, mineOnly]);
     json(res, 200, { posts: result.rows.map((row) => publicPost(row, account)) });
     return;
@@ -588,6 +826,7 @@ async function dispatch(req, res, route, account) {
 
   if (path === "/posts" && method === "POST") {
     if (!requireAccount(account, res)) return;
+    if (checkSuspended(account, res)) return;
     if (await rateLimited("SELECT count(*)::int AS count FROM community_posts WHERE author_id=$1 AND created_at > now() - interval '10 minutes'", account.id)) {
       return error(res, 429, "글 작성이 잠시 제한되었습니다. 10분 후 다시 작성해 주세요.");
     }
@@ -603,6 +842,7 @@ async function dispatch(req, res, route, account) {
 
   if (parts[0] === "posts" && parts[1] && parts[2] === "comments" && method === "POST") {
     if (!requireAccount(account, res)) return;
+    if (checkSuspended(account, res)) return;
     const postId = parts[1];
     const input = await readJson(req);
     const body = safeText(input.body, 1000);
@@ -722,8 +962,18 @@ async function dispatch(req, res, route, account) {
 
   if (parts[0] === "posts" && parts[1] && parts[2] === "reports" && method === "POST") {
     if (!requireAccount(account, res)) return;
-    const postResult = await pool.query("SELECT id FROM community_posts WHERE id=$1 AND deleted_at IS NULL", [parts[1]]);
-    if (!postResult.rowCount) return error(res, 404, "게시글을 찾을 수 없습니다.");
+    const postResult = await pool.query("SELECT id, author_id FROM community_posts WHERE id=$1 AND deleted_at IS NULL", [parts[1]]);
+    const post = postResult.rows[0];
+    if (!post) return error(res, 404, "게시글을 찾을 수 없습니다.");
+    if (post.author_id === account.id) return error(res, 400, "본인이 작성한 게시글은 신고할 수 없습니다.");
+    const keptBefore = await pool.query("SELECT 1 FROM community_reports WHERE post_id=$1 AND reporter_id=$2 AND decision='keep' LIMIT 1", [parts[1], account.id]);
+    if (keptBefore.rowCount) {
+      return error(res, 409, "운영자가 이미 문제없음으로 확인한 게시글입니다.");
+    }
+    const hourlyReports = await pool.query("SELECT count(*)::int AS count FROM community_reports WHERE reporter_id=$1 AND created_at > now() - interval '1 hour'", [account.id]);
+    if (Number(hourlyReports.rows[0]?.count || 0) >= 5) {
+      return error(res, 429, "신고 요청이 너무 많습니다. 1시간 후 다시 시도해 주세요.");
+    }
     const input = await readJson(req);
     const reason = reportReasons.has(input.reason) ? input.reason : "other";
     try {
@@ -744,19 +994,32 @@ async function dispatch(req, res, route, account) {
     }
     const result = await pool.query(`SELECT r.id, r.post_id, r.reporter_id, r.reason, r.detail, r.created_at, r.reviewed_at, r.decision,
       reporter.display_name AS reporter_name, p.title AS post_title, p.body AS post_body, p.game_id AS post_game_id,
-      p.type AS post_type, p.hidden AS post_hidden, p.author_id AS post_author_id, author.display_name AS post_author_name
+      p.type AS post_type, p.hidden AS post_hidden, p.author_id AS post_author_id, author.display_name AS post_author_name,
+      author.suspended_until AS post_author_suspended_until,
+      (SELECT count(*)::int FROM community_warnings w WHERE w.account_id = p.author_id AND w.revoked_at IS NULL AND w.created_at > now() - ($1::text || ' days')::interval) AS post_author_warning_count,
+      EXISTS (SELECT 1 FROM community_warnings w WHERE w.post_id = p.id AND w.revoked_at IS NULL) AS post_has_active_warning,
+      (SELECT count(*)::int FROM community_reports r2 WHERE r2.post_id = r.post_id) AS post_report_count
       FROM community_reports r
       LEFT JOIN community_accounts reporter ON reporter.id=r.reporter_id
       LEFT JOIN community_posts p ON p.id=r.post_id
       LEFT JOIN community_accounts author ON author.id=p.author_id
-      ORDER BY r.created_at DESC`);
+      ORDER BY r.created_at DESC`, [warningWindowDays]);
     json(res, 200, { reports: result.rows.map((row) => ({
       id: row.id, postId: row.post_id, reporterId: row.reporter_id, reason: row.reason, detail: row.detail,
       createdAt: asIso(row.created_at), reviewedAt: asIso(row.reviewed_at), decision: row.decision,
+      postReportCount: Number(row.post_report_count || 1),
       reporter: { id: row.reporter_id, displayName: row.reporter_name || "알 수 없는 게스트" },
       post: row.post_title === null ? null : {
         id: row.post_id, title: row.post_title, body: row.post_body, gameId: row.post_game_id,
-        type: row.post_type, author: { id: row.post_author_id || "", displayName: row.post_author_name || "알 수 없는 게스트" }, hidden: Boolean(row.post_hidden),
+        type: row.post_type,
+        author: {
+          id: row.post_author_id || "",
+          displayName: row.post_author_name || "알 수 없는 게스트",
+          warningCount: Number(row.post_author_warning_count || 0),
+          suspendedUntil: activeSuspensionIso(row.post_author_suspended_until),
+        },
+        hidden: Boolean(row.post_hidden),
+        hasActiveWarning: Boolean(row.post_has_active_warning),
       },
     })) });
     return;
@@ -768,25 +1031,110 @@ async function dispatch(req, res, route, account) {
         process.env.TODAYPATCH_ADMIN_TOKEN ? "운영자 권한이 없습니다." : "운영자 검토 기능은 서버에 TODAYPATCH_ADMIN_TOKEN을 설정한 뒤 사용할 수 있습니다.");
     }
     const input = await readJson(req);
-    if (!["hide", "keep", "restore"].includes(input.decision)) return error(res, 400, "처리 방법을 선택해 주세요.");
+    if (!["hide", "keep", "warn", "restore"].includes(input.decision)) return error(res, 400, "처리 방법을 선택해 주세요.");
+    const note = safeText(input.note, 300);
     const client = await pool.connect();
+    let standing = null;
     try {
       await client.query("BEGIN");
-      const result = await client.query("SELECT id, post_id FROM community_reports WHERE id=$1 FOR UPDATE", [parts[2]]);
+      const result = await client.query("SELECT id, post_id, reason FROM community_reports WHERE id=$1 FOR UPDATE", [parts[2]]);
       const report = result.rows[0];
       if (!report) {
         await client.query("ROLLBACK");
         return error(res, 404, "신고를 찾을 수 없습니다.");
       }
-      if (input.decision !== "keep") {
-        await client.query("UPDATE community_posts SET hidden=$1 WHERE id=$2", [input.decision === "hide", report.post_id]);
+      const postResult = await client.query("SELECT id, author_id, game_id, title FROM community_posts WHERE id=$1 FOR UPDATE", [report.post_id]);
+      const post = postResult.rows[0];
+      if (post) {
+        if (input.decision === "hide" || input.decision === "warn") {
+          await client.query("UPDATE community_posts SET hidden=true WHERE id=$1", [post.id]);
+        } else if (input.decision === "restore") {
+          await client.query("UPDATE community_posts SET hidden=false WHERE id=$1", [post.id]);
+        }
+        if (input.decision === "warn" && post.author_id) {
+          const existingWarn = await client.query("SELECT id FROM community_warnings WHERE account_id=$1 AND post_id=$2 AND revoked_at IS NULL LIMIT 1", [post.author_id, post.id]);
+          if (!existingWarn.rowCount) {
+            await client.query(`INSERT INTO community_warnings (id, account_id, post_id, report_id, reason, note)
+              VALUES ($1,$2,$3,$4,$5,$6)`, [randomUUID(), post.author_id, post.id, report.id, report.reason || "other", note]);
+          }
+          standing = await recalculateAccountStanding(client, post.author_id);
+          if (!existingWarn.rowCount) {
+            const penaltyMsg = standing.suspendedUntil
+              ? `최근 ${warningWindowDays}일 경고 ${standing.warningCount}회 누적으로 ${formatKstDateTime(standing.suspendedUntil)}까지 글·댓글 작성이 제한됩니다.`
+              : `최근 ${warningWindowDays}일 경고 ${standing.warningCount}회 (1회 경고는 주의 안내이며 글쓰기 제한은 적용되지 않습니다).`;
+            await client.query(`INSERT INTO community_notifications (id, account_id, kind, post_id, game_id, title, body, actor_name)
+              VALUES ($1,$2,'warning',$3,$4,'운영자 검토 결과 경고가 부여되었습니다.',$5,'운영팀')`,
+            [randomUUID(), post.author_id, post.id, post.game_id, `${note ? `${note} · ` : ""}${penaltyMsg}`.slice(0, 180)]);
+          }
+        } else if (input.decision === "restore" && post.author_id) {
+          await client.query("UPDATE community_warnings SET revoked_at=now() WHERE account_id=$1 AND post_id=$2 AND revoked_at IS NULL", [post.author_id, post.id]);
+          standing = await recalculateAccountStanding(client, post.author_id);
+        }
       }
       await client.query("UPDATE community_reports SET reviewed_at=now(), decision=$1 WHERE id=$2", [input.decision, report.id]);
+      if (input.decision !== "keep") {
+        await client.query("UPDATE community_reports SET reviewed_at=now(), decision=$1 WHERE post_id=$2 AND reviewed_at IS NULL", [input.decision, report.post_id]);
+      }
       await client.query("COMMIT");
     } catch (cause) {
       await client.query("ROLLBACK");
       throw cause;
     } finally { client.release(); }
+    json(res, 200, { ok: true, standing });
+    return;
+  }
+
+  if (parts[0] === "admin" && parts[1] === "accounts" && parts[2] && parts[3] === "unsuspend" && method === "POST") {
+    if (!isAdmin(req)) {
+      return error(res, process.env.TODAYPATCH_ADMIN_TOKEN ? 403 : 503,
+        process.env.TODAYPATCH_ADMIN_TOKEN ? "운영자 권한이 없습니다." : "운영자 검토 기능은 서버에 TODAYPATCH_ADMIN_TOKEN을 설정한 뒤 사용할 수 있습니다.");
+    }
+    const updated = await pool.query("UPDATE community_accounts SET suspended_until=NULL WHERE id=$1 RETURNING id", [parts[2]]);
+    if (!updated.rowCount) return error(res, 404, "계정을 찾을 수 없습니다.");
+    json(res, 200, { ok: true });
+    return;
+  }
+
+  if (path === "/admin/feedback" && method === "GET") {
+    if (!isAdmin(req)) {
+      return error(res, process.env.TODAYPATCH_ADMIN_TOKEN ? 403 : 503,
+        process.env.TODAYPATCH_ADMIN_TOKEN ? "운영자 권한이 없습니다." : "운영자 검토 기능은 서버에 TODAYPATCH_ADMIN_TOKEN을 설정한 뒤 사용할 수 있습니다.");
+    }
+    const result = await pool.query(`SELECT f.id, f.account_id, f.category, f.title, f.body, f.contact, f.page_context, f.status, f.admin_note, f.created_at, f.updated_at,
+      a.display_name AS author_name, a.email AS author_email
+      FROM community_feedback f
+      LEFT JOIN community_accounts a ON a.id = f.account_id
+      ORDER BY f.created_at DESC
+      LIMIT 200`);
+    json(res, 200, {
+      items: result.rows.map((row) => ({
+        id: row.id,
+        category: row.category,
+        title: row.title,
+        body: row.body,
+        contact: row.contact,
+        pageContext: row.page_context,
+        status: row.status,
+        adminNote: row.admin_note,
+        createdAt: asIso(row.created_at),
+        updatedAt: asIso(row.updated_at),
+        author: row.account_id ? { id: row.account_id, displayName: row.author_name || "회원", email: row.author_email || "" } : null,
+      })),
+    });
+    return;
+  }
+
+  if (parts[0] === "admin" && parts[1] === "feedback" && parts[2] && method === "PATCH") {
+    if (!isAdmin(req)) {
+      return error(res, process.env.TODAYPATCH_ADMIN_TOKEN ? 403 : 503,
+        process.env.TODAYPATCH_ADMIN_TOKEN ? "운영자 권한이 없습니다." : "운영자 검토 기능은 서버에 TODAYPATCH_ADMIN_TOKEN을 설정한 뒤 사용할 수 있습니다.");
+    }
+    const input = await readJson(req);
+    const status = feedbackStatuses.has(input.status) ? input.status : null;
+    if (!status) return error(res, 400, "처리 상태를 선택해 주세요.");
+    const adminNote = safeText(input.adminNote, 500);
+    const result = await pool.query("UPDATE community_feedback SET status=$1, admin_note=$2, updated_at=now() WHERE id=$3 RETURNING id", [status, adminNote, parts[2]]);
+    if (!result.rowCount) return error(res, 404, "건의 내역을 찾을 수 없습니다.");
     json(res, 200, { ok: true });
     return;
   }

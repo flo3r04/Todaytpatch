@@ -283,6 +283,8 @@ function routeKind(route = currentRoute()) {
   const parts = routeParts(route);
   if (!parts.length) return "home";
   if (parts[0] === "dashboard") return "dashboard";
+  if (parts[0] === "settings") return "settings";
+  if (parts[0] === "feedback") return "feedback";
   if (parts[0] === "community") {
     if (parts[1] === "new") return "community-new";
     if (parts[1] === "post" && parts[2]) return "community-detail";
@@ -345,7 +347,7 @@ function renderNotificationControl() {
 }
 
 function activePortalGame(kind = routeKind()) {
-  if (["home", "dashboard"].includes(kind)) return null;
+  if (["home", "dashboard", "settings", "feedback"].includes(kind)) return null;
   const parts = routeParts();
   if (kind.startsWith("community")) {
     const queryGameId = new URLSearchParams(currentRoute().split("?")[1] || "").get("gameId");
@@ -415,9 +417,11 @@ function renderGamePortalSidebar(portalGame, kind) {
       { label: "패치 후 할 일", href: "#/aion2/tasks", active: kind === "tasks" },
       { label: "저장한 북마크", href: "#/aion2/bookmarks", active: kind === "bookmarks" },
       { label: "내 대시보드", href: "#/dashboard", active: false },
+      { label: "불편 · 건의하기", href: "#/feedback", active: false },
     ]
     : [
       { label: "내 대시보드", href: "#/dashboard", active: false },
+      { label: "불편 · 건의하기", href: "#/feedback", active: false },
       { label: "게임 찾기", href: "#/", active: false },
     ];
 
@@ -488,7 +492,7 @@ function renderHeader() {
           <button class="theme-toggle" type="button" data-action="toggle-theme" aria-label="${themeLabel}로 전환" title="${themeLabel}로 전환">${themeIcon}<span>${themeLabel}</span></button>
           ${renderNotificationControl()}
           <div class="my-page-wrap">
-            <button id="my-page-toggle" class="my-page-toggle ${["dashboard", "bookmarks", "tasks"].includes(kind) ? "active" : ""}" type="button" data-action="toggle-my-page" aria-label="마이페이지 메뉴" aria-controls="my-page-menu" aria-expanded="false" title="마이페이지">
+            <button id="my-page-toggle" class="my-page-toggle ${["dashboard", "bookmarks", "tasks", "settings", "feedback"].includes(kind) ? "active" : ""}" type="button" data-action="toggle-my-page" aria-label="마이페이지 메뉴" aria-controls="my-page-menu" aria-expanded="false" title="마이페이지">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.7-3.2 3-5 6.5-5s5.8 1.8 6.5 5"/></svg><span>마이페이지</span>
             </button>
             <section id="my-page-menu" class="my-page-menu" aria-label="마이페이지" hidden>
@@ -497,6 +501,8 @@ function renderHeader() {
                 <a class="${kind === "dashboard" ? "active" : ""}" href="#/dashboard">내 대시보드</a>
                 <a class="${kind === "bookmarks" ? "active" : ""}" href="#/aion2/bookmarks">북마크</a>
                 <a class="${kind === "tasks" ? "active" : ""}" href="#/aion2/tasks">패치 후 할 일</a>
+                <a class="${kind === "settings" ? "active" : ""}" href="#/settings">설정</a>
+                <a class="${kind === "feedback" ? "active" : ""}" href="#/feedback">불편 · 건의하기</a>
                 <button type="button" data-action="open-tutorial">이용 방법</button>
               </nav>
               <div class="my-page-account">${window.todaypatchCommunity?.renderAccountControl() || ""}</div>
@@ -1469,7 +1475,7 @@ function renderDashboardPage() {
       <div class="dashboard-stats" aria-label="내 활동 요약">
         <div class="dashboard-stat"><span>팔로우 게임</span><strong>${followed.length}</strong></div>
         <div class="dashboard-stat"><span>저장한 북마크</span><strong>${bookmarks.length}</strong></div>
-        <div class="dashboard-stat dashboard-stat-accent"><span>내 커뮤니티 게시글</span><strong>${myCommunityStats.count}</strong></div>
+        <div class="dashboard-stat"><span>내 커뮤니티 게시글</span><strong>${myCommunityStats.count}</strong></div>
         <div class="dashboard-stat"><span>개인 메모</span><strong>${posts.length}</strong></div>
       </div>
       <div class="dashboard-columns">
@@ -1510,6 +1516,294 @@ function renderDashboardPage() {
         </form>
         ${posts.length ? `<div class="user-post-list">${posts.map(renderUserPost).join("")}</div>` : `<div class="dashboard-empty post-empty"><p>아직 작성한 개인 메모가 없습니다.</p><span>메모 작성하기를 눌러 나만의 공략이나 일정을 기록해 보세요.</span></div>`}
       </section>
+    </main>`;
+}
+
+function renderSettingsPage() {
+  const community = window.todaypatchCommunity;
+  const user = community?.getUser?.() || null;
+  const warnings = community?.getWarnings?.() || [];
+  const warningCount = Number(user?.warningCount || 0);
+  const suspended = Boolean(community?.isSuspended?.());
+  const isDark = document.documentElement.dataset.theme === "dark";
+  const skipTutorial = Boolean(readStorage("todaypatch.skipTutorial", false));
+  const browserSupported = "Notification" in window;
+  const browserPermission = browserSupported ? Notification.permission : "unsupported";
+  const browserEnabled = browserPermission === "granted" && readStorage("todaypatch.browserNotifications", false);
+  const recentCount = recentGameSearches().length;
+  const readCount = readNews().length;
+  const reasonLabelMap = Object.fromEntries(community?.reportReasons || []);
+
+  const profileSection = user
+    ? `<form id="settings-profile-form" class="settings-form">
+        <div class="settings-field">
+          <label for="settings-display-name">닉네임</label>
+          <input id="settings-display-name" name="displayName" type="text" minlength="2" maxlength="24" value="${escapeHTML(user.displayName || "")}" placeholder="게시판에 표시할 이름 (2~24자)" required />
+          <small>커뮤니티 게시글과 댓글에 표시되는 이름입니다.</small>
+        </div>
+        ${user.email
+          ? `<div class="settings-field">
+              <label for="settings-email">이메일 주소</label>
+              <input id="settings-email" name="email" type="email" maxlength="254" value="${escapeHTML(user.email)}" placeholder="name@example.com" required />
+              <small>이메일을 변경하는 경우 본인 확인을 위해 아래 현재 비밀번호를 입력해 주세요.</small>
+            </div>
+            <div class="settings-field">
+              <label for="settings-email-password">현재 비밀번호 (이메일 변경 시 필수)</label>
+              <input id="settings-email-password" name="currentPassword" type="password" maxlength="128" autocomplete="current-password" placeholder="닉네임만 변경할 때는 비워두세요" />
+            </div>`
+          : `<div class="settings-guest-banner">
+              <div>
+                <strong>기기 전용 게스트 계정으로 이용 중입니다</strong>
+                <p>이메일 계정을 연결하면 다른 기기에서도 팔로우·북마크·메모와 커뮤니티 활동을 이어서 볼 수 있습니다.</p>
+              </div>
+              <button class="secondary-button" type="button" data-action="community-login" data-mode="register">이메일 계정 연결</button>
+            </div>`}
+        <div class="settings-form-actions">
+          <button class="primary-button" type="submit">계정 정보 저장</button>
+        </div>
+      </form>`
+    : `<div class="dashboard-empty">
+        <p>로그인하면 닉네임, 이메일, 비밀번호와 커뮤니티 이용 상태를 관리할 수 있어요.</p>
+        <div class="settings-inline-actions">
+          <button class="primary-button" type="button" data-action="community-login">로그인</button>
+          <button class="secondary-button" type="button" data-action="community-login" data-mode="register">계정 만들기</button>
+        </div>
+      </div>`;
+
+  const passwordSection = user?.email
+    ? `<section class="settings-card" aria-labelledby="settings-password-title">
+        <div class="settings-card-head">
+          <div><span class="page-eyebrow">SECURITY</span><h2 id="settings-password-title">비밀번호 변경</h2><p>안전한 계정 이용을 위해 10자 이상의 비밀번호를 사용해 주세요.</p></div>
+        </div>
+        <form id="settings-password-form" class="settings-form">
+          <div class="settings-field">
+            <label for="settings-current-password">현재 비밀번호</label>
+            <input id="settings-current-password" name="currentPassword" type="password" maxlength="128" autocomplete="current-password" placeholder="현재 사용 중인 비밀번호" required />
+          </div>
+          <div class="settings-field-row">
+            <div class="settings-field">
+              <label for="settings-new-password">새 비밀번호</label>
+              <input id="settings-new-password" name="newPassword" type="password" minlength="10" maxlength="128" autocomplete="new-password" placeholder="10자 이상 입력" required />
+            </div>
+            <div class="settings-field">
+              <label for="settings-new-password-confirm">새 비밀번호 확인</label>
+              <input id="settings-new-password-confirm" name="newPasswordConfirm" type="password" minlength="10" maxlength="128" autocomplete="new-password" placeholder="새 비밀번호 다시 입력" required />
+            </div>
+          </div>
+          <div class="settings-form-actions">
+            <button class="primary-button" type="submit">비밀번호 변경</button>
+          </div>
+        </form>
+      </section>`
+    : "";
+
+  const standingSection = user
+    ? `<section class="settings-card" aria-labelledby="settings-standing-title">
+        <div class="settings-card-head">
+          <div><span class="page-eyebrow">COMMUNITY STANDING</span><h2 id="settings-standing-title">커뮤니티 이용 상태 및 경고 내역</h2><p>최근 90일 동안 운영자 검토를 통해 확정된 경고만 집계됩니다.</p></div>
+          <span class="standing-pill ${suspended ? "is-suspended" : warningCount > 0 ? "is-caution" : "is-clean"}">${suspended ? "글쓰기 일시 제한" : warningCount > 0 ? `경고 ${warningCount}회` : "정상 이용 중"}</span>
+        </div>
+        <div class="standing-summary-grid">
+          <div class="standing-metric"><span>최근 90일 유효 경고</span><strong>${warningCount}회</strong></div>
+          <div class="standing-metric"><span>현재 커뮤니티 권한</span><strong>${suspended ? `제한 중 (~${escapeHTML(community.formatDateTime(user.suspendedUntil))})` : "글·댓글 작성 가능"}</strong></div>
+        </div>
+        <div class="standing-policy-note">
+          <strong>신고 테러 방지 · 단계별 제재 기준</strong>
+          <ul>
+            <li>단순 신고 누적만으로는 경고가 부여되지 않으며, 운영자가 원문을 검토해 위반을 확정한 경우에만 게시글당 최대 1회 경고가 적용됩니다.</li>
+            <li>최근 90일 유효 경고 <b>1회</b>: 주의 안내(제한 없음) · <b>2회</b>: 1일 정지 · <b>3회</b>: 7일 정지 · <b>4회 이상</b>: 30일 정지</li>
+            <li>오제재로 게시글이 복구되면 해당 경고는 즉시 철회되고 제한 상태도 자동 재계산됩니다.</li>
+          </ul>
+        </div>
+        ${warnings.length
+          ? `<div class="warning-history-list">${warnings.map((item) => `<article class="warning-history-item ${item.revokedAt ? "is-revoked" : ""}">
+              <div class="warning-history-top">
+                <strong>${escapeHTML(reasonLabelMap[item.reason] || "운영정책 위반")}</strong>
+                <span class="warning-status-tag ${item.revokedAt ? "revoked" : "active"}">${item.revokedAt ? "철회됨" : "유효"}</span>
+                <time>${escapeHTML(community.formatDate(item.createdAt))}</time>
+              </div>
+              <p>대상 게시글: ${escapeHTML(item.postTitle || "삭제된 게시글")}${item.note ? ` · 운영 메모: ${escapeHTML(item.note)}` : ""}</p>
+            </article>`).join("")}</div>`
+          : `<div class="settings-clean-note">부여된 경고 이력이 없습니다.</div>`}
+      </section>`
+    : "";
+
+  const browserNotiButton = !browserSupported
+    ? `<span class="settings-row-meta">이 브라우저는 알림을 지원하지 않습니다</span>`
+    : browserPermission === "denied"
+      ? `<span class="settings-row-meta">브라우저 설정에서 차단됨</span>`
+      : `<button class="secondary-button" type="button" data-action="toggle-browser-notifications">${browserEnabled ? "알림 끄기" : "알림 켜기"}</button>`;
+
+  return `
+    <main class="page-width game-page settings-page">
+      <div class="page-heading dashboard-heading">
+        <div>
+          <span class="page-eyebrow">MY TODAYPATCH · SETTINGS</span>
+          <h1>설정</h1>
+          <p>계정 정보, 보안, 커뮤니티 이용 상태 및 화면·알림 환경을 관리할 수 있습니다.</p>
+        </div>
+        <a class="secondary-button" href="#/dashboard">내 대시보드 →</a>
+      </div>
+
+      <div class="settings-stack">
+        <section class="settings-card" aria-labelledby="settings-profile-title">
+          <div class="settings-card-head">
+            <div><span class="page-eyebrow">ACCOUNT PROFILE</span><h2 id="settings-profile-title">계정 정보</h2><p>닉네임과 이메일 주소를 수정할 수 있습니다.</p></div>
+            ${user ? `<span class="settings-account-badge">${user.email ? "이메일 계정" : "게스트 계정"}</span>` : ""}
+          </div>
+          ${profileSection}
+        </section>
+
+        ${passwordSection}
+        ${standingSection}
+
+        <section class="settings-card" aria-labelledby="settings-preferences-title">
+          <div class="settings-card-head">
+            <div><span class="page-eyebrow">PREFERENCES & DATA</span><h2 id="settings-preferences-title">화면 · 알림 · 데이터 관리</h2><p>오늘의 패치 이용 환경과 저장된 로컬 기록을 설정합니다.</p></div>
+          </div>
+          <div class="settings-list">
+            <div class="settings-row">
+              <div><strong>화면 테마</strong><small>현재 ${isDark ? "다크 모드" : "라이트 모드"}로 표시되고 있습니다.</small></div>
+              <button class="secondary-button" type="button" data-action="toggle-theme">${isDark ? "라이트 모드로 전환" : "다크 모드로 전환"}</button>
+            </div>
+            <div class="settings-row">
+              <div><strong>브라우저 새 소식 알림</strong><small>팔로우한 게임의 새 공지나 일정 알림을 브라우저로 받습니다.</small></div>
+              ${browserNotiButton}
+            </div>
+            <div class="settings-row">
+              <div><strong>시작 가이드 자동 표시</strong><small>처음 방문 시 서비스 안내 튜토리얼을 자동으로 엽니다.</small></div>
+              <div class="settings-inline-actions">
+                <label class="settings-toggle-check"><input type="checkbox" data-action="settings-tutorial-auto" ${skipTutorial ? "" : "checked"} /><span>자동 표시</span></label>
+                <button class="secondary-button" type="button" data-action="open-tutorial">다시 보기</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div><strong>최근 게임 검색 기록</strong><small>저장된 검색어 ${recentCount}건</small></div>
+              <button class="secondary-button" type="button" data-action="clear-search-history" ${recentCount ? "" : "disabled"}>검색 기록 삭제</button>
+            </div>
+            <div class="settings-row">
+              <div><strong>게시물 읽음 표시 기록</strong><small>읽음 표시된 게시물 ${readCount}건</small></div>
+              <button class="secondary-button" type="button" data-action="clear-read-history" ${readCount ? "" : "disabled"}>읽음 기록 초기화</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-card settings-feedback-callout">
+          <div>
+            <strong>사용하면서 불편한 점이나 바라는 기능이 있으신가요?</strong>
+            <p>불편·건의하기에서 의견을 남겨 주시면 검토 후 서비스 개선에 반영합니다.</p>
+          </div>
+          <a class="secondary-button" href="#/feedback">불편 · 건의하기 →</a>
+        </section>
+      </div>
+    </main>`;
+}
+
+function renderFeedbackPage() {
+  const community = window.todaypatchCommunity;
+  const user = community?.getUser?.() || null;
+  const items = community?.getMyFeedback?.() || [];
+  const categoryLabels = community?.feedbackCategoryLabels || {
+    bug: "버그 · 오류",
+    feature: "기능 제안",
+    ui: "화면 · UI 개선",
+    game: "게임 추가 요청",
+    ai: "AI 요약 · 챗봇 오류",
+    other: "기타 의견",
+  };
+  const statusLabels = community?.feedbackStatusLabels || {
+    received: "접수됨",
+    reviewing: "검토 중",
+    done: "반영 완료",
+  };
+
+  const historyContent = !user
+    ? `<div class="dashboard-empty">
+        <p>비회원 상태에서도 건의 접수가 가능합니다. 로그인 후 접수하면 이곳에서 처리 상태와 운영팀 메모를 확인할 수 있어요.</p>
+        <button class="secondary-button" type="button" data-action="community-login">로그인하고 내 내역 보기</button>
+      </div>`
+    : items.length
+      ? `<div class="feedback-history-list">${items.map((item) => `<article class="feedback-history-card">
+          <div class="feedback-history-top">
+            <span class="community-type-badge type-info">${escapeHTML(categoryLabels[item.category] || "기타")}</span>
+            <span class="feedback-status-badge status-${escapeHTML(item.status)}">${escapeHTML(statusLabels[item.status] || item.status)}</span>
+            <time>${escapeHTML(community.formatDate(item.createdAt))}</time>
+          </div>
+          <strong>${escapeHTML(item.title)}</strong>
+          <p>${escapeHTML(item.body)}</p>
+          ${item.adminNote ? `<div class="feedback-admin-reply"><span>운영팀 답변</span><p>${escapeHTML(item.adminNote)}</p></div>` : ""}
+        </article>`).join("")}</div>`
+      : `<div class="dashboard-empty"><p>아직 접수한 건의 내역이 없습니다.</p><span>왼쪽 양식으로 첫 의견을 남겨 보세요.</span></div>`;
+
+  return `
+    <main class="page-width game-page feedback-page">
+      <div class="page-heading dashboard-heading">
+        <div>
+          <span class="page-eyebrow">FEEDBACK & SUGGESTIONS</span>
+          <h1>불편 · 건의하기</h1>
+          <p>오늘의 패치를 사용하면서 불편했던 점, 오류 제보, 추가되었으면 하는 게임이나 기능을 편하게 알려주세요.</p>
+        </div>
+        <a class="secondary-button" href="#/settings">설정으로 이동</a>
+      </div>
+
+      <div class="feedback-layout">
+        <section class="settings-card feedback-form-card" aria-labelledby="feedback-form-title">
+          <div class="settings-card-head">
+            <div><span class="page-eyebrow">SUBMIT FEEDBACK</span><h2 id="feedback-form-title">의견 보내기</h2><p>작성하신 내용은 운영 검토 목록에 안전하게 전달됩니다.</p></div>
+          </div>
+          <form id="feedback-submit-form" class="settings-form">
+            <div class="settings-field-row">
+              <div class="settings-field">
+                <label for="feedback-category">문의 유형</label>
+                <select id="feedback-category" name="category" required>
+                  ${Object.entries(categoryLabels).map(([key, label]) => `<option value="${escapeHTML(key)}">${escapeHTML(label)}</option>`).join("")}
+                </select>
+              </div>
+              <div class="settings-field">
+                <label for="feedback-page-context">관련 게임 · 화면 (선택)</label>
+                <input id="feedback-page-context" name="pageContext" type="text" maxlength="120" placeholder="예: 아이온2 패치 요약, 모바일 게시판" />
+              </div>
+            </div>
+            <div class="settings-field">
+              <label for="feedback-title">제목</label>
+              <input id="feedback-title" name="title" type="text" minlength="2" maxlength="100" placeholder="핵심 내용을 짧게 요약해 주세요" required />
+            </div>
+            <div class="settings-field">
+              <label for="feedback-body">상세 내용</label>
+              <textarea id="feedback-body" name="body" rows="7" minlength="5" maxlength="2000" placeholder="어떤 상황에서 불편했는지, 혹은 어떻게 개선되면 좋을지 자유롭게 적어주세요." required></textarea>
+            </div>
+            <div class="settings-field">
+              <label for="feedback-contact">회신 받을 이메일 (선택)</label>
+              <input id="feedback-contact" name="contact" type="text" maxlength="120" value="${escapeHTML(user?.email || "")}" placeholder="답변을 받고 싶다면 이메일을 남겨 주세요" />
+            </div>
+            <div class="settings-form-actions">
+              <span class="feedback-form-hint">접수된 의견은 공개 게시판에 노출되지 않으며 운영팀만 확인합니다.</span>
+              <button class="primary-button" type="submit">건의 보내기</button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="feedback-side">
+          <section class="settings-card">
+            <div class="settings-card-head">
+              <div><span class="page-eyebrow">GUIDE</span><h2>빠른 개선을 위한 팁</h2></div>
+            </div>
+            <ul class="feedback-guide-list">
+              <li><b>버그·오류</b>: 문제가 발생한 화면이나 게임 이름, 사용 중인 기기(PC/모바일)를 함께 적어주시면 빠르게 재현할 수 있어요.</li>
+              <li><b>게임 추가 요청</b>: 원하시는 게임 이름과 자주 확인하는 공식 사이트/커뮤니티를 알려주세요.</li>
+              <li><b>AI 요약 오류</b>: 누락되거나 잘못 요약된 패치 날짜와 항목을 적어주시면 즉시 보완합니다.</li>
+            </ul>
+          </section>
+
+          <section class="settings-card" aria-labelledby="feedback-mine-title">
+            <div class="settings-card-head">
+              <div><span class="page-eyebrow">MY SUBMISSIONS</span><h2 id="feedback-mine-title">내가 보낸 건의 내역</h2></div>
+              ${user ? `<span class="dashboard-count">${items.length}건</span>` : ""}
+            </div>
+            ${historyContent}
+          </section>
+        </aside>
+      </div>
     </main>`;
 }
 
@@ -2207,7 +2501,7 @@ function maybeOpenTutorial() {
 }
 
 function renderFooter() {
-  return `<footer class="site-footer"><div class="footer-inner page-width"><a class="footer-brand" href="#/">오늘의 패치</a><span>필요한 게임 정보를 한곳에서.</span></div></footer>`;
+  return `<footer class="site-footer"><div class="footer-inner page-width"><a class="footer-brand" href="#/">오늘의 패치</a><span>필요한 게임 정보를 한곳에서.</span><nav class="footer-links" aria-label="사이트 지원"><a href="#/feedback">불편 · 건의하기</a><a href="#/settings">설정</a></nav></div></footer>`;
 }
 
 function visibleNews() {
@@ -2283,6 +2577,8 @@ function render() {
   else if (kind === "tasks") page = renderTasksPage();
   else if (kind === "bookmarks") page = renderBookmarksPage();
   else if (kind === "dashboard") page = renderDashboardPage();
+  else if (kind === "settings") page = renderSettingsPage();
+  else if (kind === "feedback") page = renderFeedbackPage();
   else if (kind === "detail") page = renderDetail(detailId());
   else if (kind.startsWith("community")) page = window.todaypatchCommunity?.renderPage(kind) || renderHome();
   else page = renderHome();
@@ -2630,6 +2926,11 @@ app.addEventListener("click", (event) => {
     applyTheme(nextTheme);
     render();
   }
+  if (action === "clear-read-history") {
+    writeStorage("todaypatch.readNews", []);
+    render();
+    showToast("게시물 읽음 표시 기록을 초기화했어요.");
+  }
   if (action === "login") openDialog("login");
   if (action === "report") openDialog("report");
   if (action === "close-dialog") app.querySelector("#app-dialog").close();
@@ -2654,6 +2955,10 @@ app.addEventListener("input", (event) => {
 app.addEventListener("change", (event) => {
   window.todaypatchCommunity?.handleChange(event.target);
   if (event.target.matches('[data-action="skip-tutorial"]')) writeStorage("todaypatch.skipTutorial", event.target.checked);
+  if (event.target.matches('[data-action="settings-tutorial-auto"]')) {
+    writeStorage("todaypatch.skipTutorial", !event.target.checked);
+    showToast(event.target.checked ? "시작 가이드 자동 표시를 켰어요." : "시작 가이드 자동 표시를 껐어요.");
+  }
 });
 
 app.addEventListener("focusin", (event) => {
